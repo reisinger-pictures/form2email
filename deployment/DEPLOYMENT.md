@@ -6,9 +6,10 @@ This document describes how to deploy the `form2email` application and its isola
 
 We use an **Infrastructure as Code (IaC)** approach. The `docker-compose.yml` file is stored in this Git repository. Portainer should pull the stack configuration directly from this repository to ensure a Single Source of Truth.
 
-The stack consists of two services:
-1. `app`: The live PHP web application serving the form.
-2. `token-checker`: An isolated Alpine Linux container that proactively monitors the validity of the Google OAuth2 token and alerts the administrator via Make.com if it expires.
+The stack consists of three services:
+1. `composer_init`: A one-shot container that installs the Composer dependencies (`vendor/`) into the bind-mount directory before the app starts. The `app` service starts only after it completed successfully.
+2. `app`: The live PHP web application serving the form.
+3. `token-checker`: An isolated Alpine Linux container that proactively monitors the validity of the Google OAuth2 token and alerts the administrator via Make.com if it expires.
 
 ## Deployment Steps
 
