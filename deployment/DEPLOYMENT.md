@@ -22,9 +22,14 @@ The stack consists of two services:
 
 ### Required Environment Variables
 
-The `mailer_options.auth_type` setting in `config.php` selects the active mailer
-strategy: `password` (SMTP/Basic Auth) or `oauth2` (Google XOAUTH2). Provide the
-environment variables that correspond to the chosen strategy.
+The configuration in `config.php` is fully per-domain: each domain block carries
+its own `mailer.options.auth_type` selecting the active strategy: `password`
+(SMTP/Basic Auth) or `oauth2` (Google XOAUTH2). All variables are therefore
+prefixed with the upper-cased, non-alphanumeric-stripped domain name.
+
+For the `reisinger.pictures` domain the prefix is `REISINGER_PICTURES_`; add a
+separate `PREFIX_` per configured domain (e.g. `A_COM_` for `a.com`,
+`B_COM_` for `b.com`).
 
 #### Common (always required)
 
@@ -33,27 +38,30 @@ environment variables that correspond to the chosen strategy.
 | `MAKE_WEBHOOK_URL` | The URL provided by your Make.com Webhook trigger. | `https://hook.eu1.make.com/...` |
 | `MAKE_API_KEY` | Your Make.com authentication header key. | `VUzRWb8yWw-JFTc` |
 
-#### Required when `auth_type=oauth2` (Google XOAUTH2)
+#### Required when `auth_type=oauth2` (Google XOAUTH2) for a domain
 
 | Variable Name | Description | Example / Format |
 | :--- | :--- | :--- |
-| `OAUTH_CLIENT_ID` | Google OAuth2 Client ID. | `...apps.googleusercontent.com` |
-| `OAUTH_CLIENT_SECRET` | Google OAuth2 Client Secret. | `GOCSPX-...` |
-| `OAUTH_REFRESH_TOKEN` | Google OAuth2 Refresh Token. | `1//03a6...` |
+| `<PREFIX>_OAUTH_CLIENT_ID` | Google OAuth2 Client ID. | `...apps.googleusercontent.com` |
+| `<PREFIX>_OAUTH_CLIENT_SECRET` | Google OAuth2 Client Secret. | `GOCSPX-...` |
+| `<PREFIX>_OAUTH_REFRESH_TOKEN` | Google OAuth2 Refresh Token. | `1//03a6...` |
 
-#### Required when `auth_type=password` (SMTP/Basic Auth)
+#### Required when `auth_type=password` (SMTP/Basic Auth) for a domain
 
 | Variable Name | Description | Example / Format |
 | :--- | :--- | :--- |
-| `SMTP_PASSWORD` | SMTP password for the configured username. | `your-smtp-password` |
-| `SMTP_HOST` | SMTP server hostname (optional, has sample default). | `smtp.example.com` |
-| `SMTP_PORT` | SMTP server port (optional, defaults to `587`). | `587` |
-| `SMTP_ENCRYPTION` | Encryption mode: `tls` or `ssl` (optional, defaults to `tls`). | `tls` |
-| `SMTP_USERNAME` | SMTP username (optional, falls back to config.php). | `contact@example.com` |
+| `<PREFIX>_SMTP_PASSWORD` | SMTP password for the configured username. | `your-smtp-password` |
+| `<PREFIX>_SMTP_HOST` | SMTP server hostname (optional, has sample default). | `smtp.example.com` |
+| `<PREFIX>_SMTP_PORT` | SMTP server port (optional, defaults to `587`). | `587` |
+| `<PREFIX>_SMTP_ENCRYPTION` | Encryption mode: `tls` or `ssl` (optional, defaults to `tls`). | `tls` |
+| `<PREFIX>_SMTP_USERNAME` | SMTP username (optional, falls back to config.php). | `contact@example.com` |
 
-> **Note:** When switching from `oauth2` to `password`, the `token-checker`
-> sidecar container no longer serves a purpose and can be disabled in the stack
-> without affecting the live `app` container.
+Example for the `reisinger.pictures` domain (oauth2): `REISINGER_PICTURES_OAUTH_CLIENT_ID`,
+`REISINGER_PICTURES_OAUTH_CLIENT_SECRET`, `REISINGER_PICTURES_OAUTH_REFRESH_TOKEN`.
+
+> **Note:** When switching a domain from `oauth2` to `password`, the
+> `token-checker` sidecar container no longer serves a purpose and can be
+> disabled in the stack without affecting the live `app` container.
 
 7. Toggle **Enable relative path volumes** (if applicable to your Portainer setup) to ensure the volume binds work correctly.
 8. Click **Deploy the stack**.

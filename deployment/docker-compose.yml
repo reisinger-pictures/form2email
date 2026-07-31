@@ -17,17 +17,20 @@ services:
       # --- Required by the Make.com failure fallback (see AGENTS.md §3) ---
       - MAKE_WEBHOOK_URL=${MAKE_WEBHOOK_URL}
       - MAKE_API_KEY=${MAKE_API_KEY}
-      # --- Google OAuth2 credentials (required only when auth_type=oauth2) ---
-      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
-      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
-      - OAUTH_REFRESH_TOKEN=${OAUTH_REFRESH_TOKEN}
-      # --- SMTP/Basic Auth credentials (required only when auth_type=password) ---
-      # The active strategy is selected via mailer_options.auth_type in config.php.
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_HOST=${SMTP_HOST:-smtp.example.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_ENCRYPTION=${SMTP_ENCRYPTION:-tls}
-      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      # --- reisinger.pictures: Google OAuth2 credentials (auth_type=oauth2) ---
+      # The per-domain environment variables map to the 'reisinger.pictures'
+      # block in config.php (see AGENTS.md §2). The active strategy is selected
+      # via that block's mailer.options.auth_type.
+      - REISINGER_PICTURES_OAUTH_CLIENT_ID=${REISINGER_PICTURES_OAUTH_CLIENT_ID}
+      - REISINGER_PICTURES_OAUTH_CLIENT_SECRET=${REISINGER_PICTURES_OAUTH_CLIENT_SECRET}
+      - REISINGER_PICTURES_OAUTH_REFRESH_TOKEN=${REISINGER_PICTURES_OAUTH_REFRESH_TOKEN}
+      # --- reisinger.pictures: SMTP/Basic Auth credentials (auth_type=password) ---
+      # Only required if the reisinger.pictures domain is switched to password auth.
+      - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
+      - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.gmail.com}
+      - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-587}
+      - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-tls}
+      - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-}
     networks:
       - webnet
 
@@ -39,9 +42,9 @@ services:
     container_name: form-email-token-checker
     restart: unless-stopped
     environment:
-      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
-      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
-      - OAUTH_REFRESH_TOKEN=${OAUTH_REFRESH_TOKEN}
+      - REISINGER_PICTURES_OAUTH_CLIENT_ID=${REISINGER_PICTURES_OAUTH_CLIENT_ID}
+      - REISINGER_PICTURES_OAUTH_CLIENT_SECRET=${REISINGER_PICTURES_OAUTH_CLIENT_SECRET}
+      - REISINGER_PICTURES_OAUTH_REFRESH_TOKEN=${REISINGER_PICTURES_OAUTH_REFRESH_TOKEN}
       - MAKE_WEBHOOK_URL=${MAKE_WEBHOOK_URL}
       - MAKE_API_KEY=${MAKE_API_KEY}
       - CHECK_INTERVAL=86400 # Every 24 hours (86400 seconds)
@@ -55,9 +58,9 @@ services:
             \"method\"  => \"POST\",
             \"header\"  => \"Content-Type: application/x-www-form-urlencoded\",
             \"content\" => http_build_query([
-              \"client_id\"     => getenv(\"OAUTH_CLIENT_ID\"),
-              \"client_secret\" => getenv(\"OAUTH_CLIENT_SECRET\"),
-              \"refresh_token\" => getenv(\"OAUTH_REFRESH_TOKEN\"),
+              \"client_id\"     => getenv(\"REISINGER_PICTURES_OAUTH_CLIENT_ID\"),
+              \"client_secret\" => getenv(\"REISINGER_PICTURES_OAUTH_CLIENT_SECRET\"),
+              \"refresh_token\" => getenv(\"REISINGER_PICTURES_OAUTH_REFRESH_TOKEN\"),
               \"grant_type\"    => \"refresh_token\",
             ]),
           ]]);

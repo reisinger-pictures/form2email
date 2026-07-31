@@ -114,6 +114,131 @@ final class FunctionsTest extends TestCase
     }
 
     // ---------------------------------------------------------------------
+    // getDomainKeyFromOrigin()
+    // ---------------------------------------------------------------------
+
+    /**
+     * @return array<string, array{0:string, 1:string}>
+     */
+    #[DataProvider('provide_valid_origins_for_domain_key')]
+    public function test_getDomainKeyFromOrigin_extracts_host(string $origin, string $expected): void
+    {
+        $this->assertSame($expected, getDomainKeyFromOrigin($origin));
+    }
+
+    /** @return array<string, array{0:string, 1:string}> */
+    public static function provide_valid_origins_for_domain_key(): array
+    {
+        return [
+            'plain https'             => ['https://reisinger.pictures', 'reisinger.pictures'],
+            'http with port'          => ['http://localhost:4321', 'localhost:4321'],
+            'uppercase host'          => ['HTTPS://EXAMPLE.COM/Path', 'example.com'],
+            'with path and query'     => ['https://example.com/form?x=1', 'example.com'],
+            'default https port'      => ['https://example.com:443/x', 'example.com'],
+            'default http port'       => ['http://example.com:80/x', 'example.com'],
+            'non-default port kept'   => ['https://example.com:8443/x', 'example.com:8443'],
+        ];
+    }
+
+    #[DataProvider('provide_invalid_origins_for_domain_key')]
+    public function test_getDomainKeyFromOrigin_rejects_invalid_input(string $invalid): void
+    {
+        $this->assertSame('', getDomainKeyFromOrigin($invalid));
+    }
+
+    /** @return array<string, array{0:string}> */
+    public static function provide_invalid_origins_for_domain_key(): array
+    {
+        return [
+            'empty string'       => [''],
+            'protocol-relative'  => ['//attacker.com/path'],
+            'backslash bypass'   => ['https:\\\\attacker.com'],
+            'javascript scheme'  => ['javascript://attacker.com/%0aalert(1)'],
+            'data scheme'        => ['data:text/html,<script>alert(1)</script>'],
+            'file scheme'        => ['file:///etc/passwd'],
+            'missing host'       => ['https:///path-only'],
+            'garbage'            => ['not-a-url'],
+        ];
+    }
+
+    // ---------------------------------------------------------------------
+    // resolveDomainConfig()
+    // ---------------------------------------------------------------------
+
+    public function test_resolveDomainConfig_returns_config_for_direct_key(): void
+    {
+        $domains = [
+            'a.com' => ['receiver_email' => 'info@a.com'],
+            'b.com' => ['receiver_email' => 'info@b.com'],
+        ];
+
+        $this->assertSame(['receiver_email' => 'info@b.com'], resolveDomainConfig($domains, 'b.com'));
+    }
+
+    public function test_resolveDomainConfig_follows_single_alias(): void
+    {
+        $domains = [
+            'reisinger.pictures' => ['receiver_email' => 'florian@reisinger.pictures'],
+            'localhost:4321' => 'reisinger.pictures',
+        ];
+
+        $this->assertSame(
+            ['receiver_email' => 'florian@reisinger.pictures'],
+            resolveDomainConfig($domains, 'localhost:4321')
+        );
+    }
+
+    public function test_resolveDomainConfig_follows_alias_chain(): void
+    {
+        $domains = [
+            'a.com' => ['receiver_email' => 'info@a.com'],
+            'b.com' => 'a.com',
+            'c.com' => 'b.com',
+        ];
+
+        $this->assertSame(['receiver_email' => 'info@a.com'], resolveDomainConfig($domains, 'c.com'));
+    }
+
+    public function test_resolveDomainConfig_returns_null_for_unknown_key(): void
+    {
+        $this->assertNull(resolveDomainConfig(['a.com' => ['receiver_email' => 'x']], 'b.com'));
+    }
+
+    public function test_resolveDomainConfig_returns_null_for_empty_key(): void
+    {
+        $this->assertNull(resolveDomainConfig(['a.com' => ['receiver_email' => 'x']], ''));
+    }
+
+    public function test_resolveDomainConfig_returns_null_for_dangling_alias(): void
+    {
+        $domains = [
+            'a.com' => 'does-not-exist.com',
+        ];
+
+        $this->assertNull(resolveDomainConfig($domains, 'a.com'));
+    }
+
+    public function test_resolveDomainConfig_returns_null_for_alias_cycle(): void
+    {
+        $domains = [
+            'a.com' => 'b.com',
+            'b.com' => 'a.com',
+        ];
+
+        $this->assertNull(resolveDomainConfig($domains, 'a.com'));
+        $this->assertNull(resolveDomainConfig($domains, 'b.com'));
+    }
+
+    public function test_resolveDomainConfig_returns_null_for_non_array_leaf(): void
+    {
+        $domains = [
+            'a.com' => 42,
+        ];
+
+        $this->assertNull(resolveDomainConfig($domains, 'a.com'));
+    }
+
+    // ---------------------------------------------------------------------
     // resolveMailerSecret()
     // ---------------------------------------------------------------------
 

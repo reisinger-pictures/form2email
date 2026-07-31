@@ -62,6 +62,82 @@ function getOriginFromUrl(string $url): string
 }
 
 /**
+ * Extracts the bare domain key (host[:port]) from a full request origin.
+ *
+ * This is the reverse operation of getOriginFromUrl(): it maps a CORS
+ * Origin header value (e.g. "https://reisinger.pictures" or
+ * "http://localhost:4321") to the bare host key used in the per-domain
+ * configuration array (e.g. "reisinger.pictures" or "localhost:4321").
+ * Configuring domains without a scheme keeps the configuration free of
+ * protocol noise and forces explicit same-origin redirect validation.
+ *
+ * @param string $origin The raw HTTP_ORIGIN header value.
+ * @return string The normalized "host[:port]" domain key, or an empty string if invalid.
+ */
+function getDomainKeyFromOrigin(string $origin): string
+{
+    // Block protocol-relative URLs and backslashes to prevent parser bypasses
+    if ($origin === '' || str_starts_with($origin, '//') || str_contains($origin, '\\')) {
+        return '';
+    }
+
+    $parsed = parse_url($origin);
+    if (!$parsed || empty($parsed['host']) || empty($parsed['scheme'])) {
+        return '';
+    }
+
+    // Enforce web-safe protocols only
+    $scheme = strtolower($parsed['scheme']);
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        return '';
+    }
+
+    $host = strtolower($parsed['host']);
+    $port = $parsed['port'] ?? null;
+
+    // Strip default ports so "https://example.com:443" equals "https://example.com"
+    if ($port === 80 || $port === 443) {
+        $port = null;
+    }
+
+    return $port !== null ? $host . ':' . $port : $host;
+}
+
+/**
+ * Resolves the effective configuration for a domain key, following alias
+ * references so multiple hosts can share one domain block without duplicating
+ * it in the configuration file.
+ *
+ * A domain entry is either an array (the effective configuration) or a string
+ * naming another domain key to reuse (e.g. 'localhost:4322' => 'localhost:4321').
+ * Alias chains are resolved with cycle protection; unresolvable references or
+ * non-array leaves resolve to null.
+ *
+ * @param array  $domains   The full 'domains' configuration array.
+ * @param string $domainKey The bare host[:port] key to resolve.
+ * @return array|null The effective domain configuration, or null if unresolvable.
+ */
+function resolveDomainConfig(array $domains, string $domainKey): ?array
+{
+    if ($domainKey === '' || !isset($domains[$domainKey])) {
+        return null;
+    }
+
+    $value = $domains[$domainKey];
+    $visited = [];
+
+    while (is_string($value)) {
+        if ($value === '' || isset($visited[$value]) || !isset($domains[$value])) {
+            return null;
+        }
+        $visited[$value] = true;
+        $value = $domains[$value];
+    }
+
+    return is_array($value) ? $value : null;
+}
+
+/**
  * Reads a configuration value with an environment variable fallback.
  *
  * This helper centralises the rule from AGENTS.md §2: secrets and other

@@ -4,88 +4,105 @@ if (!defined('ACCESS')) {
     die('Direct access not permitted.');
 }
 
+// Per-domain configuration.
+//
+// Each key is a bare host (and optional port) WITHOUT a scheme, e.g.
+// 'example.com' or 'localhost:4321'. The active domain is resolved from the
+// HTTP_ORIGIN header at runtime (see index.php + getDomainKeyFromOrigin()).
+// There is deliberately NO 'default' fallback profile: an origin that does not
+// match a configured domain is rejected with HTTP 403.
+//
+// A domain value is either a fully self-contained configuration array (including
+// the mailer settings) or a string alias naming another domain key to reuse,
+// e.g. 'www.a.com' => 'a.com'. Aliases avoid duplicating blocks and are
+// resolved by resolveDomainConfig() (cycle-protected).
+//
+// Every per-domain block is fully self-contained, including the mailer
+// settings. This allows each domain to use its own transport, e.g. domain A
+// via Google XOAUTH2 (auth_type=oauth2) and domain B via SMTP basic auth
+// (auth_type=password). Secrets MUST be injected via per-domain environment
+// variables (see AGENTS.md §2); never hardcode them in this file.
+//
+// The redirect target is NOT part of the configuration: the form frontend MUST
+// send a hidden '_next' field (e.g. the current page URL plus '?sent=true').
+// The value is strictly validated against the request origin before the user
+// is redirected. If '_next' is missing or invalid the request is rejected.
 return [
-    // --- General Settings ---
-    // Each value can be overridden by an environment variable (recommended for
-    // production deployments, see AGENTS.md §2). The fallback after "?: " is
-    // used only when the variable is not present.
-    'receiver_email' => getenv('RECEIVER_EMAIL') ?: 'contact@example.com',
-    'email_subject' => getenv('EMAIL_SUBJECT') ?: 'New message from contact form',
-    'honeypot_value' => getenv('HONEYPOT_VALUE') ?: '00000000-0000-0000-0000-000000000000',
+    'domains' => [
+        // --- Example domain A: Google XOAUTH2 ---
+        'a.com' => [
+            'receiver_email' => getenv('A_COM_RECEIVER_EMAIL') ?: 'info@a.com',
+            'email_subject' => getenv('A_COM_EMAIL_SUBJECT') ?: 'New message from contact form',
+            'honeypot_value' => getenv('A_COM_HONEYPOT_VALUE') ?: '00000000-0000-0000-0000-000000000000',
 
-    // Case-insensitive whitelist of allowed form fields.
-    // 'email' and 'honeypot' are required. '_next' is optional and, when present,
-    // is strictly validated against the active profile's origin (see index.php).
-    // 'subject', 'subject_prefix' and 'phone' are optional payload fields.
-    'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
+            // Case-insensitive whitelist of allowed form fields.
+            // 'email', 'message' and 'honeypot' are required. '_next' is mandatory
+            // and strictly validated against the request origin (see index.php).
+            'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
 
-    // --- CORS & Domain Routing Settings ---
-    // List of allowed origins for CORS headers and redirect validation.
-    'allowed_origins' => [
-        'https://example.com',
-        'https://forms.example.com',
-        'http://localhost:4321', // Allows local testing (B2C profile)
-        'http://localhost:4322'  // Allows local testing (B2B profile)
-    ],
+            'mailer' => [
+                'type' => 'phpmailer',
+                'options' => [
+                    'auth_type' => 'oauth2',
 
-    // Dynamic profiles based on the HTTP_ORIGIN.
-    // This allows routing to different sender aliases, receiving addresses, and
-    // redirect URLs per origin. The 'redirect_url' acts as the post-submit default
-    // and can be overridden per-request by the '_next' form field (validated
-    // against the active profile's origin, see index.php).
-    'domain_profiles' => [
-        'https://example.com' => [
-            'from_email' => 'contact@example.com',
-            'from_name' => 'Contact form - example.com',
-            'receiver_email' => 'contact@example.com',
-            'redirect_url' => 'https://example.com/thank-you'
+                    'host' => getenv('A_COM_SMTP_HOST') ?: 'smtp.gmail.com',
+                    'port' => (int)(getenv('A_COM_SMTP_PORT') ?: 587),
+                    'encryption' => getenv('A_COM_SMTP_ENCRYPTION') ?: 'tls',
+                    'username' => getenv('A_COM_SMTP_USERNAME') ?: 'info@a.com',
+                    'from_email' => getenv('A_COM_FROM_EMAIL') ?: 'info@a.com',
+                    'from_name' => getenv('A_COM_FROM_NAME') ?: 'Contact form - a.com',
+
+                    // --- Used for 'oauth2' auth_type (with Google) ---
+                    // Secrets MUST come from the environment; never hardcode them here.
+                    'oauth' => [
+                        'clientId' => getenv('A_COM_OAUTH_CLIENT_ID') ?: null,
+                        'clientSecret' => getenv('A_COM_OAUTH_CLIENT_SECRET') ?: null,
+                        'refreshToken' => getenv('A_COM_OAUTH_REFRESH_TOKEN') ?: null,
+                    ],
+
+                    // --- Used for 'password' auth_type (SMTP/Basic Auth) ---
+                    'password' => getenv('A_COM_SMTP_PASSWORD') ?: null,
+                ],
+            ],
         ],
-        'https://forms.example.com' => [
-            'from_email' => 'forms@example.com',
-            'from_name' => 'Contact form - forms.example.com',
-            'receiver_email' => 'forms@example.com',
-            'redirect_url' => 'https://forms.example.com/thank-you'
+
+        // --- Example domain B: SMTP basic auth ---
+        'b.com' => [
+            'receiver_email' => getenv('B_COM_RECEIVER_EMAIL') ?: 'info@b.com',
+            'email_subject' => getenv('B_COM_EMAIL_SUBJECT') ?: 'New message from contact form',
+            'honeypot_value' => getenv('B_COM_HONEYPOT_VALUE') ?: '11111111-1111-1111-1111-111111111111',
+            'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
+
+            'mailer' => [
+                'type' => 'phpmailer',
+                'options' => [
+                    'auth_type' => 'password',
+
+                    'host' => getenv('B_COM_SMTP_HOST') ?: 'smtp.example.com',
+                    'port' => (int)(getenv('B_COM_SMTP_PORT') ?: 587),
+                    'encryption' => getenv('B_COM_SMTP_ENCRYPTION') ?: 'tls',
+                    'username' => getenv('B_COM_SMTP_USERNAME') ?: 'info@b.com',
+                    'from_email' => getenv('B_COM_FROM_EMAIL') ?: 'info@b.com',
+                    'from_name' => getenv('B_COM_FROM_NAME') ?: 'Contact form - b.com',
+
+                    'oauth' => [
+                        'clientId' => getenv('B_COM_OAUTH_CLIENT_ID') ?: null,
+                        'clientSecret' => getenv('B_COM_OAUTH_CLIENT_SECRET') ?: null,
+                        'refreshToken' => getenv('B_COM_OAUTH_REFRESH_TOKEN') ?: null,
+                    ],
+
+                    // --- Used for 'password' auth_type (SMTP/Basic Auth) ---
+                    // Secrets MUST come from the environment; never hardcode them here.
+                    'password' => getenv('B_COM_SMTP_PASSWORD') ?: null,
+                ],
+            ],
         ],
-        // Fallback profile if origin is not matching or direct access.
-        // Example of an environment-driven redirect URL (recommended).
-        'default' => [
-            'from_email' => 'no-reply@example.com',
-            'from_name' => 'Contact form',
-            'redirect_url' => getenv('DEFAULT_REDIRECT_URL') ?: 'https://example.com/thank-you'
-        ]
-    ],
 
-    // --- Mailer Settings ---
-    // Choose your mailer: 'native' or 'phpmailer'.
-    // 'native' uses the built-in PHP mail() function. It requires no further config but is often unreliable.
-    // 'phpmailer' uses the PHPMailer library for reliable email delivery via SMTP.
-    'mailer_type' => 'native',
-
-    // --- PHPMailer Specific Options (only used if mailer_type is 'phpmailer') ---
-    'mailer_options' => [
-        // Choose authentication type: 'password' (SMTP/Basic Auth) or 'oauth2' (Google XOAUTH2).
-        // Both strategies are supported and selectable here. The corresponding
-        // secrets MUST be injected via environment variables (see deployment/DEPLOYMENT.md).
-        'auth_type' => 'password',
-
-        'host' => getenv('SMTP_HOST') ?: 'smtp.example.com',
-        'port' => (int)(getenv('SMTP_PORT') ?: 587), // 587 for TLS, 465 for SSL
-        'encryption' => getenv('SMTP_ENCRYPTION') ?: 'tls', // 'tls' or 'ssl'
-        'username' => getenv('SMTP_USERNAME') ?: 'contact@example.com', // SMTP user for both auth types
-        'from_email' => getenv('FROM_EMAIL') ?: 'no-reply@example.com', // The address emails will be sent from
-        'from_name' => getenv('FROM_NAME') ?: 'Your Website Form',
-
-        // --- Used for 'password' auth_type ---
-        // Read from the SMTP_PASSWORD environment variable; never hardcode in this file.
-        'password' => getenv('SMTP_PASSWORD') ?: '',
-
-        // --- Used for 'oauth2' auth_type (with Google) ---
-        // Read from the OAUTH_* environment variables; never hardcode in this file.
-        // See README.md for instructions on how to obtain these credentials.
-        'oauth' => [
-            'clientId' => getenv('OAUTH_CLIENT_ID') ?: '',
-            'clientSecret' => getenv('OAUTH_CLIENT_SECRET') ?: '',
-            'refreshToken' => getenv('OAUTH_REFRESH_TOKEN') ?: '',
-        ],
+        // --- Aliases: several hosts sharing one domain block (no duplication) ---
+        // 'www.a.com' routes to the same block as 'a.com'.
+        'www.a.com' => 'a.com',
+        // Local development profiles (e.g. Astro dev servers) reuse 'a.com'.
+        'localhost:4321' => 'a.com',
+        'localhost:4322' => 'a.com',
     ],
 ];

@@ -24,35 +24,55 @@ It supports two methods for sending email:
 1.  Rename `config.sample.php` to `config.php`.
 2.  Edit `config.php` to set up your parameters.
 
-### General Settings
+### Per-Domain Structure
+
+The configuration is organized under a single `domains` key. Each domain is
+keyed by its bare host (`host[:port]`) **without a scheme**, for example
+`reisinger.pictures` or `localhost:4321`. The active domain is resolved from
+the request's `Origin` header at runtime. **There is no fallback profile:** a
+request from an unconfigured origin is rejected with HTTP `403 Forbidden`.
+
+Every domain block is fully self-contained and supports these settings:
 
 -   `receiver_email`: The email address where you want to receive the form submissions.
--   `redirect_url`: The URL where the user will be redirected after a successful submission.
 -   `email_subject`: The subject line for the emails you will receive.
 -   `honeypot_value`: A secret value for a hidden form field to prevent spam. This must match the value in your HTML form.
 -   `whitelist`: An array of form field `name` attributes that are allowed to be processed. Any fields not in this list will be rejected. This is a security measure.
+-   `mailer`: The complete mailer configuration for this domain (see below).
+
+### Redirect Target (`_next`)
+
+There is **no `redirect_url` in the configuration**. After a successful
+submission the script redirects to the `_next` hidden field of the form, which
+**must** be present (e.g. the current page URL plus `?sent=true`). The value is
+strictly validated against the request origin; a missing or cross-origin target
+results in HTTP `400 Bad Request`.
 
 ### Mailer Configuration
 
--   **`mailer_type`**: Choose your sending method. If this option is omitted, it will default to `'native'`.
+Each domain's `mailer` block contains:
+
+-   **`type`**: The sending method.
     -   `'native'`: Uses the basic PHP `mail()` function.
-    -   `'phpmailer'`: Uses PHPMailer for SMTP. Requires the `mailer_options` to be configured and Composer dependencies to be installed.
+    -   `'phpmailer'`: Uses PHPMailer for SMTP. Requires the `options` to be configured and Composer dependencies to be installed.
+-   **`options`**: The PHPMailer options (only required when `type` is `'phpmailer'`):
+    -   **`auth_type`**: Choose your authentication type. If this option is set to anything other than `'oauth2'`, it will default to using `'password'`.
+        -   `'password'`: Use standard username/password SMTP authentication.
+        -   `'oauth2'`: Use Google's XOAUTH2 for more secure authentication.
+    -   `host`: Your SMTP server address (e.g., `smtp.gmail.com`).
+    -   `port`: The SMTP port (e.g., `587` for TLS, `465` for SSL).
+    -   `encryption`: `tls` or `ssl`.
+    -   `username`: The email address you are authenticating with.
+    -   `from_email`: The email address the message will be sent from.
+    -   `from_name`: The name associated with the `from_email`.
+    -   `password`: Your SMTP password (if using `'password'` auth).
+    -   `oauth`: Your Google API credentials (if using `'oauth2'` auth).
 
-### PHPMailer Options
-
-These are only required if `mailer_type` is set to `'phpmailer'`.
-
--   **`auth_type`**: Choose your authentication type. If this option is set to anything other than `'oauth2'`, it will default to using `'password'`.
-    -   `'password'`: Use standard username/password SMTP authentication.
-    -   `'oauth2'`: Use Google's XOAUTH2 for more secure authentication.
--   `host`: Your SMTP server address (e.g., `smtp.gmail.com`).
--   `port`: The SMTP port (e.g., `587` for TLS, `465` for SSL).
--   `encryption`: `tls` or `ssl`.
--   `username`: The email address you are authenticating with.
--   `from_email`: The email address the message will be sent from.
--   `from_name`: The name associated with the `from_email`.
--   `password`: Your SMTP password (if using `'password'` auth).
--   `oauth`: Your Google API credentials (if using `'oauth2'` auth).
+Because the mailer is per-domain, different domains can use different
+transports, e.g. `a.com` via Google XOAUTH2 and `b.com` via SMTP basic auth.
+Secrets are injected via per-domain environment variables named after the
+domain (e.g. `REISINGER_PICTURES_OAUTH_CLIENT_ID`); never hardcode them in
+`config.php`.
 
 ### Generating a (Google) OAuth Refresh Token (for `auth_type = 'oauth2'`)
 

@@ -5,7 +5,7 @@ if (!defined('ACCESS')) {
 }
 
 // Include Composer's autoloader (also pulls in the shared helpers in
-// src/functions.php, e.g., resolveMailerSecret()).
+// src/functions.php).
 require_once __DIR__ . '/vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -37,15 +37,16 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
         $mail->SMTPSecure = $mailerConfig['encryption'] === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
 
         // Authentication logic.
-        // Both auth_type paths support being sourced from the environment (AGENTS.md §2).
-        // The active strategy is selected via $mailerConfig['auth_type'] in config.php
-        // ('password' for SMTP/Basic Auth, 'oauth2' for Google XOAUTH2).
+        // The active strategy is selected via $mailerConfig['auth_type'] per
+        // domain in config.php ('password' for SMTP/Basic Auth, 'oauth2' for
+        // Google XOAUTH2). All secrets are resolved there from the per-domain
+        // environment variables (AGENTS.md §2), so they are read directly here.
         if ($mailerConfig['auth_type'] === 'oauth2') {
             $mail->AuthType = 'XOAUTH2';
             $oauthConfig    = $mailerConfig['oauth'] ?? [];
-            $clientId       = resolveMailerSecret($oauthConfig, 'clientId', 'OAUTH_CLIENT_ID');
-            $clientSecret   = resolveMailerSecret($oauthConfig, 'clientSecret', 'OAUTH_CLIENT_SECRET');
-            $refreshToken   = resolveMailerSecret($oauthConfig, 'refreshToken', 'OAUTH_REFRESH_TOKEN');
+            $clientId       = $oauthConfig['clientId'] ?? null;
+            $clientSecret   = $oauthConfig['clientSecret'] ?? null;
+            $refreshToken   = $oauthConfig['refreshToken'] ?? null;
 
             $provider = new Google([
                 'clientId'     => $clientId,
@@ -60,8 +61,8 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
             ]));
         } else { // Default to 'password'
             $mail->Username = $mailerConfig['username'];
-            // Prefer an explicit config value, otherwise fall back to the SMTP_PASSWORD env var.
-            $mail->Password = resolveMailerSecret($mailerConfig, 'password', 'SMTP_PASSWORD');
+            // The password is resolved per domain from the environment in config.php.
+            $mail->Password = $mailerConfig['password'] ?? null;
         }
 
         // Recipients

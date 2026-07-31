@@ -11,15 +11,21 @@ require_once __DIR__ . '/vendor/autoload.php';
 $config = include('config.php');
 require_once('mailer.php'); // Include the mailer dispatcher
 
-// --- CORS & ORIGIN HANDLING ---
+// --- CORS & DOMAIN RESOLUTION ---
+// Resolve the request origin against the per-domain configuration. There is
+// deliberately NO fallback profile: an unknown origin is rejected with 403.
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$isAllowedOrigin = in_array($origin, $config['allowed_origins'] ?? []);
+$domainKey = getDomainKeyFromOrigin($origin);
+$domainConfig = $domainKey === '' ? null : resolveDomainConfig($config['domains'], $domainKey);
 
-if ($isAllowedOrigin) {
-    header('Access-Control-Allow-Origin: ' . $origin);
-    header('Access-Control-Allow-Methods: POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
+if ($domainConfig === null) {
+    http_response_code(403);
+    exit('Forbidden: Unknown origin.');
 }
+
+header('Access-Control-Allow-Origin: ' . $origin);
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
 
 // Handle preflight requests gracefully
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -29,13 +35,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Validate honeypot field
-    if (!isset($_POST['honeypot']) || $_POST['honeypot'] !== $config['honeypot_value']) {
+    if (!isset($_POST['honeypot']) || $_POST['honeypot'] !== $domainConfig['honeypot_value']) {
         http_response_code(403);
         exit('Forbidden');
     }
 
     // Check if all fields are in the whitelist
-    if (!areFieldsWhitelisted($_POST, $config['whitelist'])) {
+    if (!areFieldsWhitelisted($_POST, $domainConfig['whitelist'])) {
         http_response_code(400);
         exit('Invalid form fields.');
     }
@@ -59,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Prepare email subject
-    $emailSubject = $config['email_subject'];
+    $emailSubject = $domainConfig['email_subject'];
 
     if (!empty($_POST['subject'])) {
         $emailSubject = htmlspecialchars($_POST['subject']);
@@ -69,50 +75,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $emailSubject = '[' . htmlspecialchars($_POST['subject_prefix']) . '] ' . $emailSubject;
     }
 
-    // --- DYNAMIC PROFILE ROUTING ---
-    // Apply the correct sender (and optionally receiver / redirect) based on the HTTP_ORIGIN
-    $domainProfiles = $config['domain_profiles'] ?? [];
-    $activeProfile = $domainProfiles[$origin] ?? $domainProfiles['default'];
-
-    // Inject dynamic sender into mailer options
-    $config['mailer_options']['from_email'] = $activeProfile['from_email'];
-    $config['mailer_options']['from_name'] = $activeProfile['from_name'];
-
-    // Override receiver email if specific to the domain profile
-    if (!empty($activeProfile['receiver_email'])) {
-        $config['receiver_email'] = $activeProfile['receiver_email'];
+    // --- REDIRECT TARGET (REQUIRED, SAME-ORIGIN ONLY) ---
+    // The frontend MUST send a hidden '_next' field pointing back to the form
+    // page (e.g. current URL plus '?sent=true'). There is no configured
+    // fallback: a missing or cross-origin target is rejected with 400.
+    if (empty($_POST['_next']) || !filter_var($_POST['_next'], FILTER_VALIDATE_URL)) {
+        http_response_code(400);
+        exit('Invalid redirect target.');
     }
 
-    // Override redirect URL if specific to the domain profile, fallback to default profile redirect
-    if (!empty($activeProfile['redirect_url'])) {
-        $config['redirect_url'] = $activeProfile['redirect_url'];
-    } else {
-        $config['redirect_url'] = $domainProfiles['default']['redirect_url'] ?? '';
+    $nextOrigin = getOriginFromUrl($_POST['_next']);
+    $requestOrigin = getOriginFromUrl($origin);
+
+    if (empty($nextOrigin) || $nextOrigin !== $requestOrigin) {
+        http_response_code(400);
+        exit('Invalid redirect target.');
     }
 
-    // Fail-safe protection if no redirect URL is defined anywhere in the configuration
-    if (empty($config['redirect_url'])) {
-        http_response_code(500);
-        exit('Server Configuration Error: Missing redirect URL.');
-    }
+    $redirectUrl = $_POST['_next'];
 
-    // Determine the allowed origin for this specific request profile to enforce strict same-origin redirects
-    $currentProfileOrigin = '';
-    if (array_key_exists($origin, $domainProfiles)) {
-        $currentProfileOrigin = $origin;
-    } else {
-        // Fallback: extract the origin from the default profile's redirect URL
-        $currentProfileOrigin = getOriginFromUrl($config['redirect_url']);
-    }
-
-    // Frontend override for the redirect (strictly validated using the helper function against the active profile's origin)
-    if (!empty($_POST['_next']) && filter_var($_POST['_next'], FILTER_VALIDATE_URL)) {
-        $nextOrigin = getOriginFromUrl($_POST['_next']);
-
-        if (!empty($currentProfileOrigin) && $nextOrigin === $currentProfileOrigin) {
-            $config['redirect_url'] = $_POST['_next'];
-        }
-    }
+    // --- PER-DOMAIN MAILER CONFIGURATION ---
+    // The active domain block is fully self-contained, so its mailer type and
+    // options (SMTP host, credentials, sender identity) replace the effective
+    // configuration used by the mailer dispatcher.
+    $config['receiver_email'] = $domainConfig['receiver_email'];
+    $config['mailer_type'] = $domainConfig['mailer']['type'];
+    $config['mailer_options'] = $domainConfig['mailer']['options'];
 
     // Send email using the new mailer function
     $success = send_email(
@@ -124,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- MAKE.COM WEBHOOK FALLBACK LOGIC ---
     if ($success) {
-        header("Location: " . $config['redirect_url']);
+        header("Location: " . $redirectUrl);
         exit;
     } else {
         // Read the Make.com Webhook URL and API Key from the Docker environment
