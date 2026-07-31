@@ -38,6 +38,7 @@ Every domain block is fully self-contained and supports these settings:
 -   `email_subject`: The subject line for the emails you will receive.
 -   `honeypot_value`: A secret value for a hidden form field to prevent spam. This must match the value in your HTML form.
 -   `whitelist`: An array of form field `name` attributes that are allowed to be processed. Any fields not in this list will be rejected. This is a security measure.
+-   `make`: (Optional) Per-domain Make.com failure fallback. Overrides the global `MAKE_WEBHOOK_URL` / `MAKE_API_KEY` environment variables for this domain (see `deployment/DEPLOYMENT.md`).
 -   `mailer`: The complete mailer configuration for this domain (see below).
 
 ### Redirect Target (`_next`)

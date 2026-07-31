@@ -35,8 +35,18 @@ separate `PREFIX_` per configured domain (e.g. `A_COM_` for `a.com`,
 
 | Variable Name | Description | Example / Format |
 | :--- | :--- | :--- |
-| `MAKE_WEBHOOK_URL` | The URL provided by your Make.com Webhook trigger. | `https://hook.eu1.make.com/...` |
-| `MAKE_API_KEY` | Your Make.com authentication header key. | `VUzRWb8yWw-JFTc` |
+| `MAKE_WEBHOOK_URL` | The URL provided by your Make.com Webhook trigger (global fallback, also used by the `token-checker` sidecar). | `https://hook.eu1.make.com/...` |
+| `MAKE_API_KEY` | Your Make.com authentication header key (global fallback). | `VUzRWb8yWw-JFTc` |
+
+#### Optional per-domain Make.com failure fallback (AGENTS.md §3)
+
+Each domain can notify its **own** Make.com scenario. If `<PREFIX>_MAKE_WEBHOOK_URL`
+is set it overrides the global `MAKE_WEBHOOK_URL` for that domain only.
+
+| Variable Name | Description | Example / Format |
+| :--- | :--- | :--- |
+| `<PREFIX>_MAKE_WEBHOOK_URL` | Per-domain Make.com webhook URL (overrides the global one). | `https://hook.eu1.make.com/...` |
+| `<PREFIX>_MAKE_API_KEY` | Per-domain Make.com API key (overrides the global one). | `VUzRWb8yWw-JFTc` |
 
 #### Required when `auth_type=oauth2` (Google XOAUTH2) for a domain
 

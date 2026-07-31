@@ -40,6 +40,13 @@ return [
             // and strictly validated against the request origin (see index.php).
             'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
 
+            // Per-domain Make.com failure fallback (AGENTS.md §3). These override
+            // the global MAKE_WEBHOOK_URL / MAKE_API_KEY variables for this domain.
+            'make' => [
+                'webhook_url' => getenv('A_COM_MAKE_WEBHOOK_URL') ?: null,
+                'api_key' => getenv('A_COM_MAKE_API_KEY') ?: null,
+            ],
+
             'mailer' => [
                 'type' => 'phpmailer',
                 'options' => [

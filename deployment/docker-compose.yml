@@ -15,8 +15,14 @@ services:
       '
     environment:
       # --- Required by the Make.com failure fallback (see AGENTS.md §3) ---
+      # Global fallback; per-domain variables below override these.
       - MAKE_WEBHOOK_URL=${MAKE_WEBHOOK_URL}
       - MAKE_API_KEY=${MAKE_API_KEY}
+      # --- Per-domain Make.com failure fallback (see AGENTS.md §3) ---
+      # If set, these override the global MAKE_WEBHOOK_URL / MAKE_API_KEY for
+      # the reisinger.pictures domain block (config.php 'make' section).
+      - REISINGER_PICTURES_MAKE_WEBHOOK_URL=${REISINGER_PICTURES_MAKE_WEBHOOK_URL:-}
+      - REISINGER_PICTURES_MAKE_API_KEY=${REISINGER_PICTURES_MAKE_API_KEY:-}
       # --- reisinger.pictures: Google OAuth2 credentials (auth_type=oauth2) ---
       # The per-domain environment variables map to the 'reisinger.pictures'
       # block in config.php (see AGENTS.md §2). The active strategy is selected
@@ -28,7 +34,7 @@ services:
       # Only required if the reisinger.pictures domain is switched to password auth.
       - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
       - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.gmail.com}
-      - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-587}
+      - REISINGER_PICTURES_SMTP_P<ORT=${REISINGER_PICTURES_SMTP_PORT:-587}
       - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-tls}
       - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-}
     networks:
