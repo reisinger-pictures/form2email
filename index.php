@@ -103,11 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['mailer_options'] = $domainConfig['mailer']['options'];
 
     // Send email using the new mailer function
+    $mailError = null;
     $success = send_email(
         $config,
         $emailSubject,
         $message,
-        $userEmail
+        $userEmail,
+        $mailError
     );
 
     // --- MAKE.COM WEBHOOK FALLBACK LOGIC ---
@@ -115,14 +117,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: " . $redirectUrl);
         exit;
     } else {
-        // Read the Make.com Webhook URL and API Key from the Docker environment
-        $webhookUrl = getenv('MAKE_WEBHOOK_URL');
-        $makeApiKey = getenv('MAKE_API_KEY');
+        // Read the Make.com Webhook URL and API Key from the environment. The
+        // per-domain 'make' block (config.php) overrides the global
+        // MAKE_WEBHOOK_URL / MAKE_API_KEY variables (AGENTS.md §3).
+        $makeConfig = $domainConfig['make'] ?? [];
+        $webhookUrl = !empty($makeConfig['webhook_url']) ? $makeConfig['webhook_url'] : getenv('MAKE_WEBHOOK_URL');
+        $makeApiKey = !empty($makeConfig['api_key']) ? $makeConfig['api_key'] : getenv('MAKE_API_KEY');
 
         if ($webhookUrl && $makeApiKey) {
             // Include the error, the formatted message, and the raw POST data as a fallback
             $payload = json_encode([
-                'error' => 'Live Code Error: The form on form.reisinger.pictures failed to send an email via SMTP!',
+                'error' => 'Live Code Error: The form on form.reisinger.pictures failed to send an email via SMTP! Mailer Error: ' . ($mailError ?? 'Unknown error'),
                 'formatted_message' => $message,
                 'form_data' => $_POST
             ]);

@@ -16,13 +16,15 @@ use League\OAuth2\Client\Provider\Google;
 /**
  * Sends an email using PHPMailer with SMTP (Password or XOAUTH2).
  *
- * @param array  $config       The application configuration array.
- * @param string $subject      The email subject.
- * @param string $message      The email body.
- * @param string $replyToEmail The email address for the Reply-To header.
+ * @param array       $config       The application configuration array.
+ * @param string      $subject      The email subject.
+ * @param string      $message      The email body.
+ * @param string      $replyToEmail The email address for the Reply-To header.
+ * @param string|null &$error       (Optional) By-reference variable that receives a
+ *                                  human-readable error description on failure.
  * @return bool True on success, false on failure.
  */
-function send_email_phpmailer(array $config, string $subject, string $message, string $replyToEmail): bool
+function send_email_phpmailer(array $config, string $subject, string $message, string $replyToEmail, ?string &$error = null): bool
 {
     $mail = new PHPMailer(true);
     $mailerConfig = $config['mailer_options'];
@@ -78,11 +80,22 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
 
         $mail->send();
         return true;
-    } catch (\Exception $e) {
-        // Log the error for debugging purposes. Catching the global \Exception
-        // also covers PHPMailer\PHPMailer\Exception (which extends \Exception),
-        // so the Make.com webhook fallback in index.php (AGENTS.md §3) still fires.
-        error_log("Message could not be sent. Mailer Error: {$mail->ErrorInfo}");
+    } catch (\Throwable $e) {
+        // Log the error for debugging purposes. Catching \Throwable (instead of
+        // only \Exception) also covers Guzzle/OAuth failures that occur while
+        // PHPMailer refreshes the XOAUTH2 access token: those exceptions are NOT
+        // PHPMailer\PHPMailer\Exception instances, so $mail->ErrorInfo would be
+        // empty and the raw exception message must be logged instead.
+        $mailErrorInfo = $mail->ErrorInfo;
+        $errorMessage  = $mailErrorInfo !== '' ? $mailErrorInfo : $e->getMessage();
+        $error         = $errorMessage;
+
+        error_log(sprintf(
+            "Message could not be sent. Mailer Error: %s (Exception: %s)%s",
+            $errorMessage,
+            get_class($e),
+            PHP_EOL . $e->getTraceAsString()
+        ));
         return false;
     }
 }
