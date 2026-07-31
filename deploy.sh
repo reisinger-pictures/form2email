@@ -10,7 +10,8 @@ set -e
 # Portainer to pick up the (new) volume path.
 #
 # The live container (form-reisinger-pictures) bind-mounts the directory
-# named after the subdomain: /home/webadmin/form.reisinger.pictures -> /var/www/html
+# named after the subdomain:
+#   /home/webadmin/websites/form.reisinger.pictures -> /var/www/html
 # This script:
 #   1. Restores that directory if it was deleted and fixes its ownership so
 #      rclone (running as webadmin) can write into it.
@@ -26,7 +27,7 @@ set -e
 SSH_HOST="${DEPLOY_SSH_HOST:-reisinger.pictures}"
 SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 SSH_USER="${DEPLOY_SSH_USER:-root}"
-LIVE_DIR="/home/webadmin/form.reisinger.pictures"
+LIVE_DIR="/home/webadmin/websites/form.reisinger.pictures"
 
 SSH_DEST="${SSH_USER}@${SSH_HOST}"
 

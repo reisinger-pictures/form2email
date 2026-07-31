@@ -12,30 +12,41 @@ set -e
 SSH_HOST="${DEPLOY_SSH_HOST:-reisinger.pictures}"
 SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 SSH_USER="${DEPLOY_SSH_USER:-root}"
+LIVE_DIR="/home/webadmin/websites/form.reisinger.pictures"
 
-ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" '
-  echo "=== docker ps ==="
-  docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+ssh -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" "
+  echo '=== docker ps ==='
+  docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 
-  echo ""
-  echo "=== Mounts of form-reisinger-pictures ==="
-  docker inspect form-reisinger-pictures --format "{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}}{{println}}{{end}}"
+  echo ''
+  echo '=== Mounts of form-reisinger-pictures ==='
+  docker inspect form-reisinger-pictures --format '{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}}{{println}}{{end}}'
 
-  echo ""
-  echo "=== compose-install.sh ==="
-  cat /home/webadmin/compose-install.sh 2>/dev/null || echo "(nicht gefunden)"
+  echo ''
+  echo '=== docker exec: Inhalt /var/www/html im Container ==='
+  docker exec form-reisinger-pictures ls -la /var/www/html 2>/dev/null || echo '(Container nicht erreichbar)'
 
-  echo ""
-  echo "=== /home/webadmin ==="
-  ls -la /home/webadmin
+  echo ''
+  echo '=== webadmin Home-Verzeichnis (getent passwd) ==='
+  getent passwd webadmin
 
-  echo ""
-  echo "=== index.php in Kandidaten-Verzeichnissen ==="
-  for d in /home/webadmin/form.reisinger.pictures /home/webadmin/forms.reisinger.pictures /srv/websites/form.reisinger.pictures /srv/websites/forms.reisinger.pictures; do
-    if [ -f "$d/index.php" ]; then
-      echo "OK   $d/index.php ($(wc -c < "$d/index.php") bytes)"
-    else
-      echo "MISS $d/index.php"
-    fi
-  done
-'
+  echo ''
+  echo '=== Live-Verzeichnis ${LIVE_DIR} (root-Sicht) ==='
+  ls -la ${LIVE_DIR}
+
+  echo ''
+  echo '=== vendor/ vorhanden? ==='
+  if [ -d ${LIVE_DIR}/vendor ]; then
+    echo "JA - $(find ${LIVE_DIR}/vendor -type f | wc -l) Dateien"
+  else
+    echo 'NEIN (Composer-Install erforderlich)'
+  fi
+
+  echo ''
+  echo '=== Docker-Mount-Sicht: composer:latest auf /app ==='
+  docker run --rm --volume ${LIVE_DIR}:/app composer:latest ls -la /app
+
+  echo ''
+  echo '=== Suche nach index.php in *reisinger.pictures* ==='
+  find /home /srv /var -maxdepth 5 -path '*reisinger.pictures/index.php' 2>/dev/null
+"
