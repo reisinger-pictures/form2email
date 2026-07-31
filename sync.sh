@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 echo "Synchronisiere form2email via rclone..."
-rclone sync . reisinger.pictures:/form.reisinger.pictures \
+rclone sync . reisinger.pictures:/forms.reisinger.pictures \
   --transfers=50 \
   --track-renames \
   --progress \

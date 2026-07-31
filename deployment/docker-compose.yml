@@ -7,7 +7,7 @@ services:
     container_name: form-reisinger-pictures
     restart: unless-stopped
     volumes:
-      - /home/webadmin/form.reisinger.pictures:/var/www/html
+      - /home/webadmin/forms.reisinger.pictures:/var/www/html
     command: >
       sh -c '
       chown -R www-data:www-data /var/www/html;
