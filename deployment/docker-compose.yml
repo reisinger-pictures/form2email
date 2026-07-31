@@ -7,7 +7,7 @@ services:
     container_name: form-reisinger-pictures
     restart: unless-stopped
     volumes:
-      - /home/webadmin/forms.reisinger.pictures:/var/www/html
+      - /home/webadmin/form.reisinger.pictures:/var/www/html
     command: >
       sh -c '
       chown -R www-data:www-data /var/www/html;
@@ -34,7 +34,7 @@ services:
       # Only required if the reisinger.pictures domain is switched to password auth.
       - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
       - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.gmail.com}
-      - REISINGER_PICTURES_SMTP_P<ORT=${REISINGER_PICTURES_SMTP_PORT:-587}
+      - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-587}
       - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-tls}
       - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-}
     networks:

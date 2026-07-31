@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 echo "Synchronisiere form2email via rclone..."
-rclone sync . reisinger.pictures:/forms.reisinger.pictures \
+rclone sync . reisinger.pictures:/form.reisinger.pictures \
   --transfers=50 \
   --track-renames \
   --progress \
@@ -12,5 +12,9 @@ rclone sync . reisinger.pictures:/forms.reisinger.pictures \
   --exclude='/.zcode/**' \
   --exclude='/composer.lock' \
   --exclude='/sync.sh' \
-  --exclude='/repomix-form2email.md'
-echo "Upload fuer forms.reisinger.pictures erfolgreich abgeschlossen!"
+  --exclude='/deploy.sh' \
+  --exclude='/repomix-form2email.md' \
+  --exclude='/*.md' \
+  --exclude='/tests/**' \
+  --exclude='/deployment/**'
+echo "Upload fuer form.reisinger.pictures erfolgreich abgeschlossen!"
