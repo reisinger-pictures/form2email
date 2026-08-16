@@ -23,10 +23,12 @@ if (!defined('ACCESS')) {
 // (auth_type=password). Secrets MUST be injected via per-domain environment
 // variables (see AGENTS.md §2); never hardcode them in this file.
 //
-// The redirect target is NOT part of the configuration: the form frontend MUST
-// send a hidden '_next' field (e.g. the current page URL plus '?sent=true').
-// The value is strictly validated against the request origin before the user
-// is redirected. If '_next' is missing or invalid the request is rejected.
+// The redirect target is NOT part of the configuration: the form frontend MAY
+// send a hidden '_next' field (e.g. the current page URL plus '?sent=true') to
+// enable the legacy redirect mode. The value is strictly validated against the
+// request origin before the user is redirected. If '_next' is missing, the
+// request is handled as a pure POST/API request and answered with JSON
+// (200 on success, 500 on failure) instead of a redirect.
 return [
     'domains' => [
         // --- Example domain A: Google XOAUTH2 ---
@@ -36,16 +38,11 @@ return [
             'honeypot_value' => getenv('A_COM_HONEYPOT_VALUE') ?: '00000000-0000-0000-0000-000000000000',
 
             // Case-insensitive whitelist of allowed form fields.
-            // 'email', 'message' and 'honeypot' are required. '_next' is mandatory
-            // and strictly validated against the request origin (see index.php).
+            // 'email', 'message' and 'honeypot' are required. '_next' is OPTIONAL:
+            // when present it enables the legacy redirect mode (same-origin
+            // validated, see index.php); when absent the request is handled as a
+            // pure POST/API request without a redirect.
             'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
-
-            // Per-domain Make.com failure fallback (AGENTS.md §3). These override
-            // the global MAKE_WEBHOOK_URL / MAKE_API_KEY variables for this domain.
-            'make' => [
-                'webhook_url' => getenv('A_COM_MAKE_WEBHOOK_URL') ?: null,
-                'api_key' => getenv('A_COM_MAKE_API_KEY') ?: null,
-            ],
 
             'mailer' => [
                 'type' => 'phpmailer',

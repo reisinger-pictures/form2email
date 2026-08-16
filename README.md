@@ -38,16 +38,21 @@ Every domain block is fully self-contained and supports these settings:
 -   `email_subject`: The subject line for the emails you will receive.
 -   `honeypot_value`: A secret value for a hidden form field to prevent spam. This must match the value in your HTML form.
 -   `whitelist`: An array of form field `name` attributes that are allowed to be processed. Any fields not in this list will be rejected. This is a security measure.
--   `make`: (Optional) Per-domain Make.com failure fallback. Overrides the global `MAKE_WEBHOOK_URL` / `MAKE_API_KEY` environment variables for this domain (see `deployment/DEPLOYMENT.md`).
 -   `mailer`: The complete mailer configuration for this domain (see below).
 
 ### Redirect Target (`_next`)
 
-There is **no `redirect_url` in the configuration**. After a successful
-submission the script redirects to the `_next` hidden field of the form, which
-**must** be present (e.g. the current page URL plus `?sent=true`). The value is
-strictly validated against the request origin; a missing or cross-origin target
-results in HTTP `400 Bad Request`.
+There is **no `redirect_url` in the configuration**. The script supports two
+request modes:
+
+1.  **Legacy redirect mode:** the form sends a hidden `_next` field (e.g. the
+    current page URL plus `?sent=true`). The value is strictly validated against
+    the request origin; a cross-origin target results in HTTP `400 Bad Request`.
+    On success the user is redirected to `_next`.
+2.  **Pure POST/API mode:** no `_next` field is sent. No redirect happens;
+    the request is answered with a JSON body — HTTP `200` with
+    `{"ok": true}` on success, HTTP `500` with `{"ok": false, "error": "Failed
+    to send email."}` on failure.
 
 ### Mailer Configuration
 

@@ -75,24 +75,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $emailSubject = '[' . htmlspecialchars($_POST['subject_prefix']) . '] ' . $emailSubject;
     }
 
-    // --- REDIRECT TARGET (REQUIRED, SAME-ORIGIN ONLY) ---
-    // The frontend MUST send a hidden '_next' field pointing back to the form
-    // page (e.g. current URL plus '?sent=true'). There is no configured
-    // fallback: a missing or cross-origin target is rejected with 400.
-    if (empty($_POST['_next']) || !filter_var($_POST['_next'], FILTER_VALIDATE_URL)) {
-        http_response_code(400);
-        exit('Invalid redirect target.');
+    // --- REDIRECT TARGET (OPTIONAL, SAME-ORIGIN ONLY) ---
+    // The request supports two modes:
+    // 1. Legacy redirect mode: the frontend sends a hidden '_next' field
+    //    pointing back to the form page (e.g. current URL plus '?sent=true').
+    //    The value is strictly validated against the request origin; a missing
+    //    or cross-origin target is rejected with 400.
+    // 2. Pure POST/API mode: no '_next' field is sent. The request is treated
+    //    as an API call and answered with a JSON response (200 on success,
+    //    500 on failure) instead of a redirect.
+    $isApiMode = false;
+    $redirectUrl = null;
+
+    if (empty($_POST['_next'])) {
+        $isApiMode = true;
+    } else {
+        if (!filter_var($_POST['_next'], FILTER_VALIDATE_URL)) {
+            http_response_code(400);
+            exit('Invalid redirect target.');
+        }
+
+        $nextOrigin = getOriginFromUrl($_POST['_next']);
+        $requestOrigin = getOriginFromUrl($origin);
+
+        if (empty($nextOrigin) || $nextOrigin !== $requestOrigin) {
+            http_response_code(400);
+            exit('Invalid redirect target.');
+        }
+
+        $redirectUrl = $_POST['_next'];
     }
-
-    $nextOrigin = getOriginFromUrl($_POST['_next']);
-    $requestOrigin = getOriginFromUrl($origin);
-
-    if (empty($nextOrigin) || $nextOrigin !== $requestOrigin) {
-        http_response_code(400);
-        exit('Invalid redirect target.');
-    }
-
-    $redirectUrl = $_POST['_next'];
 
     // --- PER-DOMAIN MAILER CONFIGURATION ---
     // The active domain block is fully self-contained, so its mailer type and
@@ -112,42 +124,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mailError
     );
 
-    // --- MAKE.COM WEBHOOK FALLBACK LOGIC ---
+    // --- RESPONSE HANDLING ---
     if ($success) {
-        header("Location: " . $redirectUrl);
-        exit;
-    } else {
-        // Read the Make.com Webhook URL and API Key from the environment. The
-        // per-domain 'make' block (config.php) overrides the global
-        // MAKE_WEBHOOK_URL / MAKE_API_KEY variables (AGENTS.md §3).
-        $makeConfig = $domainConfig['make'] ?? [];
-        $webhookUrl = !empty($makeConfig['webhook_url']) ? $makeConfig['webhook_url'] : getenv('MAKE_WEBHOOK_URL');
-        $makeApiKey = !empty($makeConfig['api_key']) ? $makeConfig['api_key'] : getenv('MAKE_API_KEY');
-
-        if ($webhookUrl && $makeApiKey) {
-            // Include the error, the formatted message, and the raw POST data as a fallback
-            $payload = json_encode([
-                'error' => 'Live Code Error: The form on form.reisinger.pictures failed to send an email via SMTP! Mailer Error: ' . ($mailError ?? 'Unknown error'),
-                'formatted_message' => $message,
-                'form_data' => $_POST
-            ]);
-
-            $options = [
-                'http' => [
-                    'method' => 'POST',
-                    'header' => "Content-Type: application/json\r\n" .
-                        "x-make-apikey: " . $makeApiKey . "\r\n",
-                    'content' => $payload,
-                    'ignore_errors' => true // Prevent PHP warnings if Make.com is unreachable
-                ]
-            ];
-            $context = stream_context_create($options);
-            file_get_contents($webhookUrl, false, $context);
+        if ($isApiMode) {
+            // Pure POST/API mode: respond with JSON instead of redirecting.
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true]);
+        } else {
+            // Legacy redirect mode: bounce back to the validated '_next' target.
+            header("Location: " . $redirectUrl);
         }
-
-        http_response_code(500);
-        exit('Failed to send email.');
+        exit;
     }
+
+    // Failure: the Make.com webhook is no longer called from the live app (see
+    // AGENTS.md §3). The error is returned to the client as a JSON 500 response
+    // in API mode, or as a plain-text 500 response in legacy redirect mode.
+    if ($isApiMode) {
+        header('Content-Type: application/json');
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Failed to send email.']);
+        exit;
+    }
+
+    http_response_code(500);
+    exit('Failed to send email.');
 }
 
 // Fallback for non-POST requests
