@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   # 0. One-shot Composer dependency install before the app starts. Mounts the
   #     same bind-mount directory as the app container, so every stack (re)start
   #     ensures vendor/ is present and up-to-date. The app container's chown
   #     fixes file ownership afterwards.
   composer_init:
-    image: composer:latest
+    image: composer:2
     container_name: form-reisinger-pictures-composer
     volumes:
       - /home/webadmin/websites/form.reisinger.pictures:/app:Z
