@@ -10,7 +10,13 @@ services:
       - /home/webadmin/websites/form.reisinger.pictures:/app:Z
     command: install --ignore-platform-reqs --no-interaction --optimize-autoloader
 
-  # 1. The live container for the web form
+  # 1. The live container for the web form.
+  #
+  #     Mail transport: Zoho ZeptoMail via SMTP basic auth
+  #     (auth_type=password in config.php). The API key is injected via
+  #     REISINGER_PICTURES_SMTP_PASSWORD (AGENTS.md §2). ZeptoMail uses a
+  #     static API key with no token expiry, so no OAuth sidecar/monitoring
+  #     container is needed anymore.
   app:
     image: ghcr.io/reisi007/php-base:8.5
     container_name: form-reisinger-pictures
@@ -26,84 +32,14 @@ services:
       exec php-fpm
       '
     environment:
-      # --- reisinger.pictures: Google OAuth2 credentials (auth_type=oauth2) ---
+      # --- reisinger.pictures: SMTP credentials (auth_type=password, ZeptoMail) ---
       # The per-domain environment variables map to the 'reisinger.pictures'
-      # block in config.php (see AGENTS.md §2). The active strategy is selected
-      # via that block's mailer.options.auth_type.
-      - REISINGER_PICTURES_OAUTH_CLIENT_ID=${REISINGER_PICTURES_OAUTH_CLIENT_ID}
-      - REISINGER_PICTURES_OAUTH_CLIENT_SECRET=${REISINGER_PICTURES_OAUTH_CLIENT_SECRET}
-      - REISINGER_PICTURES_OAUTH_REFRESH_TOKEN=${REISINGER_PICTURES_OAUTH_REFRESH_TOKEN}
-      # --- reisinger.pictures: SMTP/Basic Auth credentials (auth_type=password) ---
-      # Only required if the reisinger.pictures domain is switched to password auth.
+      # block in config.php (see AGENTS.md §2).
       - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
-      - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.gmail.com}
+      - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.zeptomail.eu}
       - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-587}
       - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-tls}
-      - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-}
-    networks:
-      - webnet
-
-  # 2. The ISOLATED container for testing the email token (OAuth2 version).
-  #     Only relevant when auth_type=oauth2. If you switch to auth_type=password,
-  #     this service can be disabled without affecting the live app.
-  #
-  #     TODO: Remove this token-checker service (and its Make.com alerting)
-  #     once config.php switches the reisinger.pictures domain from
-  #     auth_type=oauth2 (Gmail) to auth_type=password (SMTP password auth).
-  token-checker:
-    image: ghcr.io/reisi007/php-base:8.5
-    container_name: form-email-token-checker
-    restart: unless-stopped
-    environment:
-      - REISINGER_PICTURES_OAUTH_CLIENT_ID=${REISINGER_PICTURES_OAUTH_CLIENT_ID}
-      - REISINGER_PICTURES_OAUTH_CLIENT_SECRET=${REISINGER_PICTURES_OAUTH_CLIENT_SECRET}
-      - REISINGER_PICTURES_OAUTH_REFRESH_TOKEN=${REISINGER_PICTURES_OAUTH_REFRESH_TOKEN}
-      - MAKE_WEBHOOK_URL=${MAKE_WEBHOOK_URL}
-      - MAKE_API_KEY=${MAKE_API_KEY}
-      - CHECK_INTERVAL=86400 # Every 24 hours (86400 seconds)
-    command: >
-      sh -c '
-      php -r "
-        while (true) {
-          echo \"[\" . date(\"Y-m-d H:i:s\") . \"] Initiating OAuth2 token check...\n\";
-
-          \$ctx = stream_context_create([\"http\" => [
-            \"method\"  => \"POST\",
-            \"header\"  => \"Content-Type: application/x-www-form-urlencoded\",
-            \"content\" => http_build_query([
-              \"client_id\"     => getenv(\"REISINGER_PICTURES_OAUTH_CLIENT_ID\"),
-              \"client_secret\" => getenv(\"REISINGER_PICTURES_OAUTH_CLIENT_SECRET\"),
-              \"refresh_token\" => getenv(\"REISINGER_PICTURES_OAUTH_REFRESH_TOKEN\"),
-              \"grant_type\"    => \"refresh_token\",
-            ]),
-          ]]);
-
-          \$res = @file_get_contents(\"https://oauth2.googleapis.com/token\", false, \$ctx);
-
-          if (\$res === false || str_contains(\$res, \"\\\"error\\\"\")) {
-            echo \"[\" . date(\"Y-m-d H:i:s\") . \"] ERROR: Token renewal failed! Sending webhook...\n\";
-
-            \$wctx = stream_context_create([\"http\" => [
-              \"method\"  => \"POST\",
-              \"header\"  => \"Content-Type: application/json\r\nx-make-apikey: \" . getenv(\"MAKE_API_KEY\"),
-              \"content\" => json_encode([
-                \"error\"             => \"Automated Checker: OAuth2 Refresh Token for form.reisinger.pictures has expired or is invalid!\",
-                \"formatted_message\" => \"System Alert - Check Portainer Logs.\",
-              ]),
-            ]]);
-
-            @file_get_contents(getenv(\"MAKE_WEBHOOK_URL\"), false, \$wctx);
-          } else {
-            echo \"[\" . date(\"Y-m-d H:i:s\") . \"] SUCCESS: Token is valid.\n\";
-          }
-
-          \$next = date(\"Y-m-d H:i:s\", time() + (int) getenv(\"CHECK_INTERVAL\"));
-          echo \"[\" . date(\"Y-m-d H:i:s\") . \"] Next check: \$next\n\";
-
-          sleep((int) getenv(\"CHECK_INTERVAL\"));
-        }
-      "
-      '
+      - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-emailapikey}
     networks:
       - webnet
 

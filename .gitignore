@@ -121,3 +121,6 @@ config.php
 repomix-form2email.md
 vendor/
 .phpunit.cache/
+# macOS / IDE
+.DS_Store
+.idea/
