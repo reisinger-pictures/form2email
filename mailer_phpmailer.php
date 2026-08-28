@@ -33,10 +33,42 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
         // Server settings
         // $mail->SMTPDebug = SMTP::DEBUG_SERVER; // Enable verbose debug output for troubleshooting
         $mail->isSMTP();
-        $mail->Host       = $mailerConfig['host'];
-        $mail->SMTPAuth   = true;
-        $mail->Port       = $mailerConfig['port'];
-        $mail->SMTPSecure = $mailerConfig['encryption'] === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Host = $mailerConfig['host'];
+        $mail->Port = $mailerConfig['port'];
+
+        // Force UTF-8 for headers and body. PHPMailer 7 defaults to ISO-8859-1,
+        // which would mangle non-ASCII subjects/bodies (e.g. German umlauts)
+        // into mojibake when encoded as =?iso-8859-1?...?. This contact form is
+        // German-facing, so UTF-8 is mandatory for correct, client-compatible
+        // rendering.
+        $mail->CharSet = 'UTF-8';
+
+        // Transport encryption strategy. The effective encryption mode is chosen
+        // per domain in config.php ('encryption' option):
+        //   - 'ssl'  -> implicit TLS (SMTPS) on the configured port
+        //   - 'tls'  -> explicit TLS via STARTTLS (default)
+        //   - 'none' / 'plain' -> no transport encryption (e.g. a local
+        //     Mailpit/dev SMTP that does not advertise STARTTLS). SMTPAutoTLS is
+        //     disabled here so PHPMailer never attempts a STARTTLS upgrade that
+        //     the server would reject with "Command not implemented".
+        $encryption = strtolower($mailerConfig['encryption'] ?? 'tls');
+
+        // Authentication is required for the encrypted transports (ssl/tls)
+        // against real providers. For an unencrypted local transport
+        // ('none'/'plain', e.g. Mailpit) the SMTP server usually performs no
+        // authentication, so SMTPAuth defaults to off there but can be forced on
+        // per domain via the 'smtp_auth' flag.
+        $defaultAuth   = ($encryption === 'none' || $encryption === 'plain') ? false : true;
+        $mail->SMTPAuth = (bool)($mailerConfig['smtp_auth'] ?? $defaultAuth);
+
+        if ($encryption === 'ssl') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($encryption === 'none' || $encryption === 'plain') {
+            $mail->SMTPSecure   = '';
+            $mail->SMTPAutoTLS  = false;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        }
 
         // Authentication logic.
         // The active strategy is selected via $mailerConfig['auth_type'] per
@@ -73,9 +105,15 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
         $mail->addReplyTo($replyToEmail);
 
         // Content
-        $mail->isHTML(true); // Set to true if you want to send HTML email
+        $mail->isHTML(true);
         $mail->Subject = $subject;
-        $mail->Body    = '<div style="white-space: pre-wrap;">' . $message . '</div>';
+        // Render newlines as <br> so line breaks are honoured by ALL mail
+        // clients. Relying solely on `white-space: pre-wrap` fails in clients
+        // that ignore that CSS property (notably Outlook), collapsing the
+        // message into a single line. The message is already HTML-escaped by
+        // the caller (index.php uses htmlspecialchars), so nl2br() is safe
+        // against injection.
+        $mail->Body    = nl2br($message);
         $mail->AltBody = $message; // For non-HTML mail clients
 
         $mail->send();
