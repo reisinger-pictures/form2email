@@ -251,3 +251,76 @@ function rateLimitClientIp(array $server, string $header = 'X-Forwarded-For'): ?
     return filter_var($candidate, FILTER_VALIDATE_IP) !== false ? $candidate : null;
 }
 
+/**
+ * Builds a redaction-safe, single-line summary of the effective mail context.
+ *
+ * This helper exists so mailer failures can be logged with enough operational
+ * detail (which transport, endpoint and identity were used) to diagnose the
+ * problem immediately, WITHOUT ever writing a secret such as the SMTP password
+ * or an OAuth token to the log. Only an explicit allow-list of non-secret
+ * fields is serialised, so a future secret option cannot leak by accident.
+ *
+ * @param array $config       The effective application configuration.
+ * @param array $mailerConfig The effective 'mailer_options' array.
+ * @return string A "key=value" summary; empty values render as "-".
+ */
+function mailerContextSummary(array $config, array $mailerConfig): string
+{
+    $fields = [
+        'mailer'     => (string)($config['mailer_type'] ?? 'unknown'),
+        'auth'       => (string)($mailerConfig['auth_type'] ?? 'password'),
+        'host'       => (string)($mailerConfig['host'] ?? ''),
+        'port'       => (string)($mailerConfig['port'] ?? ''),
+        'encryption' => (string)($mailerConfig['encryption'] ?? 'tls'),
+        'username'   => (string)($mailerConfig['username'] ?? ''),
+        'from'       => (string)($mailerConfig['from_email'] ?? ''),
+        'receiver'   => (string)($config['receiver_email'] ?? ''),
+    ];
+
+    $parts = [];
+    foreach ($fields as $key => $value) {
+        $parts[] = $key . '=' . ($value === '' ? '-' : $value);
+    }
+
+    return implode(' ', $parts);
+}
+
+/**
+ * Maps a raw mailer error message to an actionable operator hint.
+ *
+ * The goal is to turn a terse SMTP error (e.g. "Could not authenticate") into a
+ * log line that tells the operator what to check first. Returns null when the
+ * message matches no known pattern, so callers can omit the hint entirely.
+ *
+ * @param string $errorMessage The raw PHPMailer/transport error text.
+ * @return string|null A short, actionable hint, or null if none applies.
+ */
+function mailerErrorHint(string $errorMessage): ?string
+{
+    $needle = strtolower($errorMessage);
+
+    if (str_contains($needle, 'authenticate')
+        || str_contains($needle, 'authentication')
+        || str_contains($needle, '535')
+    ) {
+        return 'SMTP authentication failed: verify the SMTP username and the app-specific '
+            . 'password (for Zoho Mail: account -> Security -> App Passwords). A revoked or '
+            . 'rotated password must be updated in the environment.';
+    }
+
+    if (str_contains($needle, 'connection refused')
+        || str_contains($needle, 'connect failed')
+        || str_contains($needle, 'timed out')
+        || str_contains($needle, 'could not connect')
+    ) {
+        return 'SMTP connection failed: verify host, port and encryption mode (tls/587 vs ssl/465).';
+    }
+
+    if (str_contains($needle, 'sender')
+        || str_contains($needle, 'from address')
+    ) {
+        return 'Sender rejected: the From address must be a verified/authorized sender for the SMTP account.';
+    }
+
+    return null;
+}

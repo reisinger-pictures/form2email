@@ -12,11 +12,11 @@ services:
 
   # 1. The live container for the web form.
   #
-  #     Mail transport: Zoho ZeptoMail via SMTP basic auth
-  #     (auth_type=password in config.php). The API key is injected via
-  #     REISINGER_PICTURES_SMTP_PASSWORD (AGENTS.md §2). ZeptoMail uses a
-  #     static API key with no token expiry, so no OAuth sidecar/monitoring
-  #     container is needed anymore.
+  #     Mail transport: Zoho Mail via SMTP basic auth
+  #     (auth_type=password in config.php). The app-specific password is
+  #     injected via REISINGER_PICTURES_SMTP_PASSWORD (AGENTS.md §2). Zoho
+  #     app passwords are long-lived but can be revoked, so no OAuth
+  #     sidecar/monitoring container is needed.
   app:
     image: ghcr.io/reisi007/php-base:8.5
     container_name: form-reisinger-pictures
@@ -32,14 +32,21 @@ services:
       exec php-fpm
       '
     environment:
-      # --- reisinger.pictures: SMTP credentials (auth_type=password, ZeptoMail) ---
+      # --- reisinger.pictures: SMTP credentials (auth_type=password, Zoho Mail) ---
       # The per-domain environment variables map to the 'reisinger.pictures'
       # block in config.php (see AGENTS.md §2).
+      #
+      # Single source of truth: the non-secret defaults (host, port, encryption,
+      # username, from) live ONLY in config.php. Compose deliberately forwards
+      # them empty (`:-`), so a missing Portainer value falls back to config.php
+      # instead of silently overriding it with a stale provider endpoint. The
+      # password is a secret and has no default anywhere: it MUST be set in
+      # Portainer, otherwise mailer_phpmailer.php fails fast with a clear error.
       - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
-      - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-smtp.zeptomail.eu}
-      - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-587}
-      - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-tls}
-      - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-emailapikey}
+      - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-}
+      - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-}
+      - REISINGER_PICTURES_SMTP_ENCRYPTION=${REISINGER_PICTURES_SMTP_ENCRYPTION:-}
+      - REISINGER_PICTURES_SMTP_USERNAME=${REISINGER_PICTURES_SMTP_USERNAME:-}
     networks:
       - webnet
 

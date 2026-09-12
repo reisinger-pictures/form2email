@@ -277,4 +277,77 @@ final class FunctionsTest extends TestCase
 
         $this->assertSame('env-client-id', $result);
     }
+
+    // ---------------------------------------------------------------------
+    // mailerContextSummary()
+    // ---------------------------------------------------------------------
+
+    public function test_mailerContextSummary_contains_transport_context(): void
+    {
+        $summary = mailerContextSummary(
+            ['mailer_type' => 'phpmailer', 'receiver_email' => 'dest@example.com'],
+            [
+                'auth_type'  => 'password',
+                'host'       => 'smtppro.zoho.eu',
+                'port'       => 587,
+                'encryption' => 'tls',
+                'username'   => 'sender@example.com',
+                'from_email' => 'sender@example.com',
+                'password'   => 'super-secret',
+            ]
+        );
+
+        $this->assertStringContainsString('mailer=phpmailer', $summary);
+        $this->assertStringContainsString('host=smtppro.zoho.eu', $summary);
+        $this->assertStringContainsString('port=587', $summary);
+        $this->assertStringContainsString('encryption=tls', $summary);
+        $this->assertStringContainsString('username=sender@example.com', $summary);
+        $this->assertStringContainsString('receiver=dest@example.com', $summary);
+    }
+
+    public function test_mailerContextSummary_never_leaks_password(): void
+    {
+        // The log line must stay diagnosable without exposing credentials: only
+        // allow-listed, non-secret fields may be serialised.
+        $summary = mailerContextSummary(
+            [],
+            ['password' => 'super-secret', 'host' => 'smtp.example.com']
+        );
+
+        $this->assertStringNotContainsString('super-secret', $summary);
+    }
+
+    public function test_mailerContextSummary_renders_missing_values_as_dash(): void
+    {
+        $summary = mailerContextSummary([], []);
+
+        $this->assertStringContainsString('host=-', $summary);
+        $this->assertStringContainsString('username=-', $summary);
+        $this->assertStringContainsString('receiver=-', $summary);
+    }
+
+    // ---------------------------------------------------------------------
+    // mailerErrorHint()
+    // ---------------------------------------------------------------------
+
+    public function test_mailerErrorHint_detects_authentication_failure(): void
+    {
+        $hint = mailerErrorHint('SMTP Error: Could not authenticate.');
+
+        $this->assertNotNull($hint);
+        $this->assertStringContainsString('app-specific', $hint);
+    }
+
+    public function test_mailerErrorHint_detects_connection_failure(): void
+    {
+        $hint = mailerErrorHint('SMTP connect() failed. Connection refused');
+
+        $this->assertNotNull($hint);
+        $this->assertStringContainsString('host', $hint);
+    }
+
+    public function test_mailerErrorHint_returns_null_for_unknown_error(): void
+    {
+        $this->assertNull(mailerErrorHint('Some completely unknown transport error'));
+    }
 }

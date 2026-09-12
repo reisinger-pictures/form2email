@@ -124,3 +124,8 @@ vendor/
 # macOS / IDE
 .DS_Store
 .idea/
+
+# Secrets / local environment files — NEVER commit (AGENTS.md §2)
+.env
+.env.*
+.env.production

@@ -99,6 +99,24 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
             $mail->Password = $mailerConfig['password'] ?? null;
         }
 
+        // Fail fast when password auth is enabled but no password/secret is
+        // configured. The SMTP server answers an empty password with the same
+        // generic "Could not authenticate" as a wrong one, so reporting the
+        // actual cause here (a missing secret) turns an ambiguous failure into
+        // an actionable log line and avoids a pointless network round-trip.
+        if ($mail->SMTPAuth
+            && ($mailerConfig['auth_type'] ?? 'password') !== 'oauth2'
+            && empty($mailerConfig['password'])
+        ) {
+            $error = 'SMTP password is not configured (the SMTP password environment variable is empty).';
+            error_log(sprintf(
+                'form2email mail send failed: %s error="%s"',
+                mailerContextSummary($config, $mailerConfig),
+                $error
+            ));
+            return false;
+        }
+
         // Recipients
         $mail->setFrom($mailerConfig['from_email'], $mailerConfig['from_name']);
         $mail->addAddress($config['receiver_email']);
@@ -128,10 +146,19 @@ function send_email_phpmailer(array $config, string $subject, string $message, s
         $errorMessage  = $mailErrorInfo !== '' ? $mailErrorInfo : $e->getMessage();
         $error         = $errorMessage;
 
+        // Structured, secret-free failure line. It carries the transport
+        // context (host/port/encryption/auth/username/sender/recipient) plus an
+        // actionable hint, so an SMTP failure is diagnosable straight from the
+        // log without inspecting the container environment. Password and OAuth
+        // secrets are never included (see mailerContextSummary()).
+        $hint = mailerErrorHint($errorMessage);
+
         error_log(sprintf(
-            "Message could not be sent. Mailer Error: %s (Exception: %s)%s",
+            'form2email mail send failed: %s error="%s" exception=%s%s%s',
+            mailerContextSummary($config, $mailerConfig),
             $errorMessage,
             get_class($e),
+            $hint !== null ? ' hint="' . $hint . '"' : '',
             PHP_EOL . $e->getTraceAsString()
         ));
         return false;

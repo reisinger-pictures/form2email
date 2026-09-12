@@ -8,6 +8,7 @@ rclone sync . reisinger.pictures:/form.reisinger.pictures \
   --exclude='/vendor/**' \
   --exclude='/.git/**' \
   --exclude='/.idea/**' \
+  --exclude='/.env*' \
   --exclude='/.phpunit.cache/**' \
   --exclude='/.zcode/**' \
   --exclude='/.codegraph/**' \
