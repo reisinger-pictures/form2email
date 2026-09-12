@@ -31,3 +31,9 @@ This document contains repository-specific context, architectural decisions, and
   2. **Commit and push any open changes** before syncing. Do not sync with uncommitted/unpushed work left behind.
   3. **Only then run the sync** (`./sync.sh`).
   Rationale: a sync deploys to the live server; uncommitted work or broken tests must never reach production silently.
+
+## 7. Rate Limiting & Abuse Prevention
+* **Limit the send, not the request:** The per-domain limiter MUST run *after* input validation (whitelist + email check) so only requests that actually attempt to send a mail consume the quota. Counting raw POSTs lets bots that fail validation exhaust a client's budget and lock out legitimate senders.
+* **Never collapse clients into one bucket:** The rate-limit key is `domain|client-ip`, where the IP MUST come from a header the trusted reverse proxy overwrites (Caddy: `X-Forwarded-For`). If that header is missing or not a valid IP, the limiter MUST fail OPEN — falling back to `REMOTE_ADDR` behind a proxy would key on the proxy container IP and rate-limit every visitor as a single client. `client_ip_header => ''` (explicit direct mode, trusting `REMOTE_ADDR`) is only allowed when the app is reachable without a proxy.
+* **Storage failures fail open:** The file-based counter (`src/ratelimit.php`) MUST allow the request on any storage or lock error; a broken cache must never block mail delivery.
+* **Tests:** The window logic (`pruneTimestamps`, `isRateLimited`), the client-IP resolution (including its fail-open contract) and the storage layer MUST stay covered by `tests/RateLimitTest.php`. The end-to-end API path is covered by `tests/ApiSendEmailTest.php` (real POST without `_next`, Mailpit delivery, and a regression test that invalid requests do not consume the quota).

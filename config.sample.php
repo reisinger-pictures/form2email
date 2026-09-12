@@ -44,6 +44,21 @@ return [
             // pure POST/API request without a redirect.
             'whitelist' => ['email', 'name', 'message', 'phone', 'honeypot', 'subject', 'subject_prefix', '_next'],
 
+            // Optional per-client sliding-window limit (abuse brake). Only
+            // requests that pass validation (i.e. would actually send a mail)
+            // are counted. 'client_ip_header' MUST name a header that the
+            // reverse proxy overwrites (Caddy: X-Forwarded-For); set it to ''
+            // only for a directly reachable app, which then trusts REMOTE_ADDR.
+            // If the configured header is missing or not a valid IP, limiting
+            // fails OPEN so a misconfigured proxy can never lock out all users.
+            // Omit the key entirely to disable limiting. 'max' <= 0 disables it.
+            'rate_limit' => [
+                'max' => 10,
+                'window' => 600,
+                'client_ip_header' => 'X-Forwarded-For',
+                // 'storage_dir' => '/var/cache/form2email-ratelimit',
+            ],
+
             'mailer' => [
                 'type' => 'phpmailer',
                 'options' => [

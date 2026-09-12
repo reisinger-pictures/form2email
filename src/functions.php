@@ -158,3 +158,96 @@ function resolveMailerSecret(array $configArray, string $configKey, string $envN
     $envValue = getenv($envName);
     return $envValue === false ? null : (string)$envValue;
 }
+
+/**
+ * Drops all timestamps that lie outside the current sliding window.
+ *
+ * The window is the half-open interval ($now - $window, $now]. Entries that are
+ * stale (older than or exactly at the window boundary) or in the future are
+ * removed. Non-integer values are discarded defensively so a corrupted counter
+ * file cannot inflate the request count.
+ *
+ * @param array $timestamps List of Unix timestamps of previous requests.
+ * @param int   $now        The current Unix timestamp.
+ * @param int   $window     The length of the sliding window in seconds.
+ * @return array The timestamps that are still inside the window.
+ */
+function pruneTimestamps(array $timestamps, int $now, int $window): array
+{
+    $threshold = $now - $window;
+    return array_values(array_filter(
+        $timestamps,
+        static fn ($timestamp): bool => is_int($timestamp) && $timestamp > $threshold && $timestamp <= $now
+    ));
+}
+
+/**
+ * Determines whether a new request would exceed the configured rate limit.
+ *
+ * This is a pure predicate: it never records the request itself. The storage
+ * layer (src/ratelimit.php) is responsible for persisting timestamps, which
+ * keeps this logic trivially unit-testable.
+ *
+ * @param array $timestamps List of Unix timestamps of previous requests.
+ * @param int   $max        Maximum number of requests allowed per window. Values <= 0 disable the limit.
+ * @param int   $now        The current Unix timestamp.
+ * @param int   $window     The length of the sliding window in seconds. Values <= 0 disable the limit.
+ * @return bool True if the limit is already reached (the request must be rejected), false otherwise.
+ */
+function isRateLimited(array $timestamps, int $max, int $now, int $window): bool
+{
+    if ($max <= 0 || $window <= 0) {
+        return false;
+    }
+
+    return count(pruneTimestamps($timestamps, $now, $window)) >= $max;
+}
+
+/**
+ * Resolves the client IP used as the rate-limit key, or null when it cannot be
+ * determined reliably.
+ *
+ * Trust model (see AGENTS.md): behind a reverse proxy the header identified by
+ * 'client_ip_header' is the only trustworthy source, because the proxy
+ * overwrites it and ignores client-supplied values. When that header is
+ * configured but missing or not a valid IP, this function returns null instead
+ * of falling back to REMOTE_ADDR: behind a proxy REMOTE_ADDR is the proxy
+ * container's IP, and using it would collapse every visitor into ONE shared
+ * bucket (a global lock-out). Callers MUST fail open on a null result.
+ *
+ * Passing an empty $header explicitly selects direct mode (no proxy): the
+ * caller then trusts REMOTE_ADDR. Use this only when the application is
+ * reachable directly, never when it sits behind a proxy.
+ *
+ * @param array  $server The $_SERVER superglobal.
+ * @param string $header The HTTP header carrying the client IP; '' uses REMOTE_ADDR (direct mode).
+ * @return string|null A validated IP address, or null if none can be determined safely.
+ */
+function rateLimitClientIp(array $server, string $header = 'X-Forwarded-For'): ?string
+{
+    if ($header === '') {
+        $remote = (string)($server['REMOTE_ADDR'] ?? '');
+        return filter_var($remote, FILTER_VALIDATE_IP) !== false ? $remote : null;
+    }
+
+    $normalized = 'HTTP_' . strtoupper(str_replace('-', '_', $header));
+
+    // 'REMOTE_ADDR' is deliberately not a valid HTTP header name here.
+    if ($normalized === 'HTTP_REMOTE_ADDR'
+        || !isset($server[$normalized])
+        || !is_string($server[$normalized])
+        || $server[$normalized] === ''
+    ) {
+        return null;
+    }
+
+    // Reduce a proxy chain list ("client, proxy1, proxy2") to the first entry,
+    // which is the original client when the proxy overwrites the header.
+    $candidate = trim($server[$normalized]);
+    if (str_contains($candidate, ',')) {
+        $candidate = trim(explode(',', $candidate)[0]);
+    }
+
+    return filter_var($candidate, FILTER_VALIDATE_IP) !== false ? $candidate : null;
+}
+

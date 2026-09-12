@@ -106,6 +106,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $redirectUrl = $_POST['_next'];
     }
 
+    // --- RATE LIMITING (OPTIONAL, PER DOMAIN) ---
+    // The limit is applied AFTER validation on purpose: only requests that
+    // would actually send a mail consume the quota. Counting raw requests here
+    // (as a naive limiter would) lets bots that fail validation exhaust the
+    // budget and lock out legitimate senders.
+    //
+    // Abuse prevention relies on this per-client limit plus the honeypot and
+    // Origin allow-list (see AGENTS.md §7). Configured per domain via
+    // 'rate_limit'; when the key is absent, no limiting happens.
+    $rateLimit = $domainConfig['rate_limit'] ?? null;
+    if (is_array($rateLimit) && (int)($rateLimit['max'] ?? 0) > 0) {
+        require_once __DIR__ . '/src/ratelimit.php';
+
+        $clientIp = rateLimitClientIp(
+            $_SERVER,
+            (string)($rateLimit['client_ip_header'] ?? 'X-Forwarded-For')
+        );
+
+        // Fail open when the client IP cannot be determined safely. Behind a
+        // proxy, REMOTE_ADDR is the proxy's IP; using it as a fallback would
+        // collapse every visitor into one shared bucket and lock out all users.
+        if ($clientIp !== null) {
+            $clientKey  = $domainKey . '|' . $clientIp;
+            $storageDir = (string)($rateLimit['storage_dir'] ?? (sys_get_temp_dir() . '/form2email-ratelimit'));
+            $window     = (int)($rateLimit['window'] ?? 300);
+
+            if (!allowRequest($storageDir, $clientKey, (int)$rateLimit['max'], $window)) {
+                error_log(sprintf(
+                    'form2email rate limit exceeded: domain=%s client=%s',
+                    $domainKey,
+                    $clientIp
+                ));
+
+                http_response_code(429);
+                header('Retry-After: ' . max(1, $window));
+
+                if ($isApiMode) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['ok' => false, 'error' => 'Too many requests.']);
+                    exit;
+                }
+
+                exit('Too many requests.');
+            }
+        }
+    }
+
     // --- PER-DOMAIN MAILER CONFIGURATION ---
     // The active domain block is fully self-contained, so its mailer type and
     // options (SMTP host, credentials, sender identity) replace the effective
