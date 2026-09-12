@@ -8,11 +8,7 @@ services:
     container_name: form-reisinger-pictures-composer
     volumes:
       - /home/webadmin/websites/form.reisinger.pictures:/app:Z
-    command: >
-      sh -c '
-      composer install --ignore-platform-reqs --no-interaction --optimize-autoloader;
-      rm -f vendor/phpmailer/phpmailer/get_oauth_token.php
-      '
+    command: install --ignore-platform-reqs --no-interaction --optimize-autoloader
 
   # 1. The live container for the web form.
   #

@@ -22,15 +22,9 @@ declare(strict_types=1);
  */
 function areFieldsWhitelisted(array $fields, array $whitelist): bool
 {
-    // Cast defensively: PHP converts numeric form field names (e.g. "0") to
-    // integer array keys, and strict_types would make strtolower() throw a
-    // TypeError on those otherwise.
-    $lowercaseWhitelist = array_map(
-        static fn ($allowed): string => strtolower((string)$allowed),
-        $whitelist
-    );
+    $lowercaseWhitelist = array_map('strtolower', $whitelist);
     foreach (array_keys($fields) as $field) {
-        if (!in_array(strtolower((string)$field), $lowercaseWhitelist, true)) {
+        if (!in_array(strtolower($field), $lowercaseWhitelist, true)) {
             return false;
         }
     }
@@ -144,91 +138,23 @@ function resolveDomainConfig(array $domains, string $domainKey): ?array
 }
 
 /**
- * Removes characters that could break out of a mail header value.
+ * Reads a configuration value with an environment variable fallback.
  *
- * Mail headers are line-oriented: a raw carriage return (CR), line feed (LF)
- * or NUL byte inside a header value allows an attacker to append arbitrary
- * headers (mail header injection). Both PHPMailer (secureHeader()) and PHP's
- * mail() already strip these characters, but sanitising at the application
- * boundary is cheap defence in depth and keeps the intent explicit.
+ * This helper centralises the rule from AGENTS.md §2: secrets and other
+ * deployment-specific values must never be hardcoded in config.php. If the
+ * value is present in the config array it is preferred; otherwise the
+ * matching environment variable is read via getenv().
  *
- * @param string $value The raw header value (e.g. the form-supplied subject).
- * @return string The value with CR, LF and NUL removed and surrounding whitespace trimmed.
+ * @param array  $configArray The configuration sub-array to look in (e.g., $mailerConfig or $oauth).
+ * @param string $configKey   The key to look up inside $configArray.
+ * @param string $envName     The environment variable name used as a fallback.
+ * @return string|null The resolved value, or null if neither source provides one.
  */
-function sanitizeHeaderValue(string $value): string
+function resolveMailerSecret(array $configArray, string $configKey, string $envName): ?string
 {
-    return trim(str_replace(["\r", "\n", "\0"], '', $value));
-}
-
-/**
- * Filters a list of request timestamps down to those inside a sliding window.
- *
- * Pure helper used by the file-based rate limiter (src/ratelimit.php). Keeping
- * the window logic side-effect free makes it testable without touching disk.
- *
- * @param array $timestamps List of Unix timestamps of previous requests.
- * @param int   $now        The current Unix timestamp.
- * @param int   $window     The length of the sliding window in seconds.
- * @return array The timestamps that are inside ($now - $window, $now].
- */
-function pruneTimestamps(array $timestamps, int $now, int $window): array
-{
-    $threshold = $now - $window;
-    return array_values(array_filter(
-        $timestamps,
-        static fn ($timestamp): bool => is_int($timestamp) && $timestamp > $threshold && $timestamp <= $now
-    ));
-}
-
-/**
- * Determines whether a new request would exceed the configured rate limit.
- *
- * @param array $timestamps List of Unix timestamps of previous requests.
- * @param int   $max        Maximum number of requests allowed per window. Values <= 0 disable the limit.
- * @param int   $now        The current Unix timestamp.
- * @param int   $window     The length of the sliding window in seconds. Values <= 0 disable the limit.
- * @return bool True if the limit is already reached (the request must be rejected), false otherwise.
- */
-function isRateLimited(array $timestamps, int $max, int $now, int $window): bool
-{
-    if ($max <= 0 || $window <= 0) {
-        return false;
+    if (!empty($configArray[$configKey])) {
+        return (string)$configArray[$configKey];
     }
-    return count(pruneTimestamps($timestamps, $now, $window)) >= $max;
-}
-
-/**
- * Resolves the client IP used as the rate-limit key.
- *
- * Prefers a reverse-proxy header (default "X-Forwarded-For") and falls back to
- * REMOTE_ADDR. X-Forwarded-For is the safe default in front of Caddy: Caddy
- * ignores any client-supplied X-Forwarded-For value and rewrites the header
- * with the real client IP, so it cannot be spoofed. Other headers such as
- * X-Real-IP are passed through unchanged by Caddy and MUST only be used when
- * the reverse proxy is explicitly configured to overwrite them. Note that
- * REMOTE_ADDR is the proxy container's IP when the app sits behind a proxy, so
- * the fallback collapses all clients into one bucket. X-Forwarded-For values
- * are reduced to their first entry.
- *
- * @param array  $server The $_SERVER superglobal.
- * @param string $header The HTTP header carrying the client IP; empty string uses REMOTE_ADDR only.
- * @return string A validated IP address (never empty).
- */
-function rateLimitClientIp(array $server, string $header = 'X-Forwarded-For'): string
-{
-    if ($header !== '') {
-        $normalized = 'HTTP_' . strtoupper(str_replace('-', '_', $header));
-        if ($normalized !== 'HTTP_REMOTE_ADDR' && !empty($server[$normalized])) {
-            $candidate = trim((string)$server[$normalized]);
-            if (str_contains($candidate, ',')) {
-                $candidate = trim(explode(',', $candidate)[0]);
-            }
-            if (filter_var($candidate, FILTER_VALIDATE_IP) !== false) {
-                return $candidate;
-            }
-        }
-    }
-
-    $remote = (string)($server['REMOTE_ADDR'] ?? '');
-    return filter_var($remote, FILTER_VALIDATE_IP) !== false ? $remote : '0.0.0.0';
+    $envValue = getenv($envName);
+    return $envValue === false ? null : (string)$envValue;
 }

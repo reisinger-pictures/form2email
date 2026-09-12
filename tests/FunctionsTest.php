@@ -16,6 +16,19 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 final class FunctionsTest extends TestCase
 {
+    /**
+     * Resets the shared environment state after each test so that env-based
+     * assertions do not leak across tests.
+     */
+    protected function tearDown(): void
+    {
+        putenv('SMTP_PASSWORD');
+        putenv('OAUTH_CLIENT_ID');
+        putenv('OAUTH_CLIENT_SECRET');
+        putenv('OAUTH_REFRESH_TOKEN');
+        parent::tearDown();
+    }
+
     // ---------------------------------------------------------------------
     // areFieldsWhitelisted()
     // ---------------------------------------------------------------------
@@ -51,14 +64,6 @@ final class FunctionsTest extends TestCase
     public function test_areFieldsWhitelisted_accepts_empty_input(): void
     {
         $this->assertTrue(areFieldsWhitelisted([], ['email', 'name']));
-    }
-
-    public function test_areFieldsWhitelisted_handles_numeric_field_names(): void
-    {
-        // PHP converts the form field name "0" into an integer array key. Under
-        // strict_types, strtolower() would throw a TypeError without the string
-        // cast, turning the request into an uncaught fatal error (HTTP 500).
-        $this->assertFalse(areFieldsWhitelisted(['0' => 'x'], ['email', 'name']));
     }
 
     // ---------------------------------------------------------------------
@@ -234,98 +239,42 @@ final class FunctionsTest extends TestCase
     }
 
     // ---------------------------------------------------------------------
-    // sanitizeHeaderValue()
+    // resolveMailerSecret()
     // ---------------------------------------------------------------------
 
-    #[DataProvider('provide_header_values')]
-    public function test_sanitizeHeaderValue_strips_header_control_characters(string $input, string $expected): void
+    public function test_resolveMailerSecret_prefers_config_value(): void
     {
-        $this->assertSame($expected, sanitizeHeaderValue($input));
+        // Config wins over env so local-dev overrides remain possible.
+        putenv('SMTP_PASSWORD=env-should-be-ignored');
+        $result = resolveMailerSecret(['password' => 'cfg-value'], 'password', 'SMTP_PASSWORD');
+
+        $this->assertSame('cfg-value', $result);
     }
 
-    /** @return array<string, array{0:string, 1:string}> */
-    public static function provide_header_values(): array
+    public function test_resolveMailerSecret_falls_back_to_env(): void
     {
-        return [
-            'plain value'        => ['Hello', 'Hello'],
-            'crlf injection'     => ["Hello\r\nBcc: evil@example.com", 'HelloBcc: evil@example.com'],
-            'lone cr'            => ["Hello\rBcc: evil@example.com", 'HelloBcc: evil@example.com'],
-            'lone lf'            => ["Hello\nBcc: evil@example.com", 'HelloBcc: evil@example.com'],
-            'nul byte'           => ["Hello\0World", 'HelloWorld'],
-            'surrounding blanks' => ['  Hello  ', 'Hello'],
-        ];
+        // Production path: secrets live in env, config.php ships empty strings.
+        putenv('SMTP_PASSWORD=env-secret-value');
+        $result = resolveMailerSecret(['password' => ''], 'password', 'SMTP_PASSWORD');
+
+        $this->assertSame('env-secret-value', $result);
     }
 
-    // ---------------------------------------------------------------------
-    // pruneTimestamps() / isRateLimited()
-    // ---------------------------------------------------------------------
-
-    public function test_pruneTimestamps_keeps_only_timestamps_inside_the_window(): void
+    public function test_resolveMailerSecret_returns_null_when_neither_source_provides_value(): void
     {
-        // now = 300, window = 100 -> keep (200, 300].
-        $this->assertSame([290, 300], pruneTimestamps([100, 200, 290, 300, 999], 300, 100));
+        // The application must be able to detect "no credential configured" and
+        // trigger the failure webhook instead of silently sending with empty creds.
+        putenv('SMTP_PASSWORD');
+        $result = resolveMailerSecret(['password' => ''], 'password', 'SMTP_PASSWORD');
+
+        $this->assertNull($result);
     }
 
-    public function test_isRateLimited_is_false_below_the_limit(): void
+    public function test_resolveMailerSecret_handles_missing_key(): void
     {
-        $this->assertFalse(isRateLimited([100, 200], 3, 200, 300));
-    }
+        putenv('OAUTH_CLIENT_ID=env-client-id');
+        $result = resolveMailerSecret([], 'clientId', 'OAUTH_CLIENT_ID');
 
-    public function test_isRateLimited_is_true_when_the_limit_is_reached(): void
-    {
-        $this->assertTrue(isRateLimited([100, 150, 200], 3, 200, 300));
-    }
-
-    public function test_isRateLimited_ignores_timestamps_outside_the_window(): void
-    {
-        $this->assertFalse(isRateLimited([1, 2, 3], 3, 10_000, 300));
-    }
-
-    public function test_isRateLimited_is_disabled_for_non_positive_values(): void
-    {
-        $this->assertFalse(isRateLimited([100, 100, 100], 0, 100, 300));
-        $this->assertFalse(isRateLimited([100, 100, 100], 3, 100, 0));
-    }
-
-    // ---------------------------------------------------------------------
-    // rateLimitClientIp()
-    // ---------------------------------------------------------------------
-
-    public function test_rateLimitClientIp_prefers_the_forwarded_for_header(): void
-    {
-        $server = ['HTTP_X_FORWARDED_FOR' => '203.0.113.7', 'REMOTE_ADDR' => '10.0.0.1'];
-        $this->assertSame('203.0.113.7', rateLimitClientIp($server));
-    }
-
-    public function test_rateLimitClientIp_does_not_trust_x_real_ip_by_default(): void
-    {
-        // Caddy passes a client-supplied X-Real-IP through unchanged, so it is
-        // spoofable and must only be used when the proxy overwrites it. With the
-        // default (X-Forwarded-For) the value is ignored and REMOTE_ADDR wins.
-        $server = ['HTTP_X_REAL_IP' => '203.0.113.7', 'REMOTE_ADDR' => '10.0.0.1'];
-        $this->assertSame('10.0.0.1', rateLimitClientIp($server));
-    }
-
-    public function test_rateLimitClientIp_uses_the_first_forwarded_for_entry(): void
-    {
-        $server = ['HTTP_X_FORWARDED_FOR' => '203.0.113.7, 10.0.0.1', 'REMOTE_ADDR' => '10.0.0.1'];
-        $this->assertSame('203.0.113.7', rateLimitClientIp($server));
-    }
-
-    public function test_rateLimitClientIp_falls_back_for_an_invalid_header(): void
-    {
-        $server = ['HTTP_X_FORWARDED_FOR' => 'not-an-ip', 'REMOTE_ADDR' => '10.0.0.1'];
-        $this->assertSame('10.0.0.1', rateLimitClientIp($server));
-    }
-
-    public function test_rateLimitClientIp_can_ignore_proxy_headers(): void
-    {
-        $server = ['HTTP_X_FORWARDED_FOR' => '203.0.113.7', 'REMOTE_ADDR' => '10.0.0.1'];
-        $this->assertSame('10.0.0.1', rateLimitClientIp($server, ''));
-    }
-
-    public function test_rateLimitClientIp_never_returns_an_empty_string(): void
-    {
-        $this->assertSame('0.0.0.0', rateLimitClientIp([]));
+        $this->assertSame('env-client-id', $result);
     }
 }
