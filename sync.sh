@@ -10,6 +10,7 @@ rclone sync . reisinger.pictures:/form.reisinger.pictures \
   --exclude='/.idea/**' \
   --exclude='/.phpunit.cache/**' \
   --exclude='/.zcode/**' \
+  --exclude='/.codegraph/**' \
   --exclude='/sync.sh' \
   --exclude='/deploy.sh' \
   --exclude='/repomix-form2email.md' \

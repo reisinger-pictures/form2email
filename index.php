@@ -40,10 +40,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('Forbidden');
     }
 
+    // --- RATE LIMITING (OPTIONAL, PER DOMAIN) ---
+    // Origin validation and the honeypot are not secrets (the browser sends the
+    // Origin header automatically and the honeypot value is part of the public
+    // form markup), so a per-client limit is the actual abuse brake against
+    // scripted submissions. Configured per domain via 'rate_limit'; when the
+    // key is absent, no limiting happens.
+    $rateLimit = $domainConfig['rate_limit'] ?? null;
+    if (is_array($rateLimit) && (int)($rateLimit['max'] ?? 0) > 0) {
+        require_once __DIR__ . '/src/ratelimit.php';
+
+        $clientKey  = $domainKey . '|' . rateLimitClientIp(
+            $_SERVER,
+            (string)($rateLimit['client_ip_header'] ?? 'X-Forwarded-For')
+        );
+        $storageDir = (string)($rateLimit['storage_dir'] ?? (sys_get_temp_dir() . '/form2email-ratelimit'));
+        $window     = (int)($rateLimit['window'] ?? 300);
+
+        if (!allowRequest($storageDir, $clientKey, (int)$rateLimit['max'], $window)) {
+            http_response_code(429);
+            header('Retry-After: ' . max(1, $window));
+
+            if (empty($_POST['_next'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['ok' => false, 'error' => 'Too many requests.']);
+                exit;
+            }
+
+            exit('Too many requests.');
+        }
+    }
+
     // Check if all fields are in the whitelist
     if (!areFieldsWhitelisted($_POST, $domainConfig['whitelist'])) {
         http_response_code(400);
         exit('Invalid form fields.');
+    }
+
+    // Reject non-string values (e.g. "name[]=x") up front. Array values would
+    // otherwise reach htmlspecialchars() and abort with an uncaught TypeError
+    // (HTTP 500) instead of a clean 400.
+    foreach ($_POST as $value) {
+        if (!is_string($value)) {
+            http_response_code(400);
+            exit('Invalid form fields.');
+        }
     }
 
     // Validate mandatory email field
@@ -58,13 +99,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = '';
     foreach ($_POST as $key => $value) {
         // Skip special fields and any fields with an empty value
-        if ($key === 'honeypot' || $key === 'subject' || $key === 'subject_prefix' || $key === "_next" || trim((string)$value) === '') {
+        if ($key === 'honeypot' || $key === 'subject' || $key === 'subject_prefix' || $key === "_next" || trim($value) === '') {
             continue;
         }
-        $message .= ucfirst($key) . ":\n" . htmlspecialchars($value) . "\n\n";
+        $message .= ucfirst((string)$key) . ":\n" . htmlspecialchars($value) . "\n\n";
     }
 
-    // Prepare email subject
+    // Prepare email subject. The subject and its prefix are form-controlled and
+    // are sanitised against mail header injection (CR/LF/NUL) as defence in
+    // depth, even though both mailers already strip those characters.
     $emailSubject = $domainConfig['email_subject'];
 
     if (!empty($_POST['subject'])) {
@@ -74,6 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($_POST['subject_prefix'])) {
         $emailSubject = '[' . htmlspecialchars($_POST['subject_prefix']) . '] ' . $emailSubject;
     }
+
+    $emailSubject = sanitizeHeaderValue($emailSubject);
 
     // --- REDIRECT TARGET (OPTIONAL, SAME-ORIGIN ONLY) ---
     // The request supports two modes:

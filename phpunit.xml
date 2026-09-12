@@ -10,13 +10,6 @@
          displayDetailsOnTestsThatTriggerWarnings="true"
          failOnRisky="true"
          failOnWarning="true">
-    <php>
-        <!-- Environment defaults for the test suite; individual tests may override. -->
-        <env name="SMTP_PASSWORD" value="env-secret-value"/>
-        <env name="OAUTH_CLIENT_ID" value="env-client-id"/>
-        <env name="OAUTH_CLIENT_SECRET" value="env-client-secret"/>
-        <env name="OAUTH_REFRESH_TOKEN" value="env-refresh-token"/>
-    </php>
     <testsuites>
         <testsuite name="unit">
             <directory>tests</directory>

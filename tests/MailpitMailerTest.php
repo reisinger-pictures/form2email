@@ -151,6 +151,31 @@ final class MailpitMailerTest extends TestCase
         $this->assertSame('noreply@example.com', $message['ReturnPath'] ?? '');
     }
 
+    public function test_crlf_in_subject_cannot_inject_headers(): void
+    {
+        // Regression guard for mail header injection. A CR/LF inside the
+        // form-controlled subject must not add headers or recipients. PHPMailer
+        // strips CR/LF in secureHeader(); this asserts the delivered message
+        // carries no injected Bcc/X-Injected header.
+        $subject = "Bonjour\r\nX-Injected: yes\r\nBcc: attacker@example.com";
+        $config  = $this->buildConfig();
+        $error   = null;
+
+        $sent = send_email($config, $subject, "Message:\nHello", 'user@example.com', $error);
+        $this->assertTrue($sent, 'Mailer reported failure: ' . $error);
+
+        $message = $this->waitForMessage($this->expectedRecipient());
+
+        $this->assertSame(
+            'BonjourX-Injected: yesBcc: attacker@example.com',
+            $message['Subject'],
+            'CR/LF in the subject must be stripped, not carried into headers.'
+        );
+        $this->assertEmpty($message['Bcc'] ?? null, 'A Bcc header must not be injectable via the subject.');
+        $this->assertCount(1, $message['To']);
+        $this->assertSame($this->expectedRecipient(), $message['To'][0]['Address']);
+    }
+
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------

@@ -7,7 +7,7 @@ It supports two methods for sending email:
 2.  **PHPMailer:** Uses the popular PHPMailer library to send email via SMTP, which is far more reliable. It supports both standard password authentication and Google XOAUTH2 for enhanced security.
 
 ## Requirements
-- PHP 8.0+
+- PHP 8.5+
 - Composer _(optional, only required for the `phpmailer` feature)_
 
 ## Installation
@@ -38,6 +38,7 @@ Every domain block is fully self-contained and supports these settings:
 -   `email_subject`: The subject line for the emails you will receive.
 -   `honeypot_value`: A secret value for a hidden form field to prevent spam. This must match the value in your HTML form.
 -   `whitelist`: An array of form field `name` attributes that are allowed to be processed. Any fields not in this list will be rejected. This is a security measure.
+-   `rate_limit` (optional): A per-client sliding-window limit (`max`, `window`, `client_ip_header`, optional `storage_dir`). Requests over the limit receive HTTP `429`. Omitting the key disables limiting. `client_ip_header` must be a header the trusted reverse proxy overwrites; the deployed Caddy proxy provides `X-Forwarded-For` (it ignores spoofed incoming values), whereas `X-Real-IP` is passed through unchanged.
 -   `mailer`: The complete mailer configuration for this domain (see below).
 
 ### Redirect Target (`_next`)
@@ -98,6 +99,7 @@ This script relies on two simple but effective anti-spam techniques that you sho
 
 1.  **Honeypot Field:** This is a hidden `input` field that a real user will not see or fill out. Bots, however, will often fill it in. The script checks that this field has the exact `honeypot_value` you set in the config.
 2.  **Spam Trap Checkbox:** This is a hidden `checkbox` with a common name (like `terms` or `subscribe`). Bots will often check every box they find. However, this field's name is **intentionally left out of the `whitelist`** in the config. If a bot checks the box, the field is sent with the form, the script sees an un-whitelisted field, and the submission is rejected. A normal user will not see or check the box, so the field is never sent.
+3.  **Rate limiting (`rate_limit`):** A per-client sliding-window limit per domain. The `Origin` check and the honeypot are not secrets, so this is the actual brake against scripted submissions. For stronger protection add a CAPTCHA at the edge (reverse proxy).
 
 ### Sample Code
 
