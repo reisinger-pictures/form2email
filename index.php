@@ -184,9 +184,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Failure: the Make.com webhook is no longer called from the live app (see
-    // AGENTS.md §3). The error is returned to the client as a JSON 500 response
-    // in API mode, or as a plain-text 500 response in legacy redirect mode.
+    // Failure: the live app never calls external webhooks (see AGENTS.md §3).
+    // The error is returned to the client as a JSON 500 response in API mode,
+    // or as a plain-text 500 response in legacy redirect mode. Diagnostics come
+    // from the structured, secret-free log line written by mailer_phpmailer.php.
     if ($isApiMode) {
         header('Content-Type: application/json');
         http_response_code(500);
