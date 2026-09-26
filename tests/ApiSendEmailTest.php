@@ -44,6 +44,7 @@ final class ApiSendEmailTest extends TestCase
     private int    $smtpPort;
     private string $apiBase;
     private string $runId;
+    private int    $startedAt;
 
     /**
      * Resolves the Mailpit location and skips the suite when it is down.
@@ -64,6 +65,12 @@ final class ApiSendEmailTest extends TestCase
         }
 
         $this->runId = bin2hex(random_bytes(8));
+        // Frozen once per test. subject() used to call time() on every
+        // invocation, so a second boundary between the POST and the assertion
+        // produced a 1-off subject and failed the suite at random (roughly
+        // 1 in 3 runs). The subject must be identical in the request and in
+        // the assertion.
+        $this->startedAt = time();
     }
 
     // ---------------------------------------------------------------------
@@ -167,7 +174,7 @@ final class ApiSendEmailTest extends TestCase
 
     private function subject(): string
     {
-        return sprintf('Form2Email API E2E [%s] %d', $this->runId, time());
+        return sprintf('Form2Email API E2E [%s] %d', $this->runId, $this->startedAt);
     }
 
     private function honeypot(): string
