@@ -125,3 +125,12 @@ exception=PHPMailer\PHPMailer\Exception hint="SMTP authentication failed: ..."
   and update `REISINGER_PICTURES_SMTP_PASSWORD` in Portainer.
 * An empty password is reported explicitly ("SMTP password is not configured")
   instead of a generic authentication error.
+
+### History: the "Could not authenticate" drift incident
+
+The strict separation in the configuration model above exists because of a real
+incident: leftover **ZeptoMail defaults duplicated in `docker-compose.yml`
+silently overrode the Zoho Mail configuration** in `config.php`, and mail
+sending failed with `Could not authenticate`. Removing the duplicated defaults
+(and forwarding the variables empty) is the fix that made `config.php` the only
+place for non-secret defaults.
