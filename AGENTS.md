@@ -45,3 +45,15 @@ in `AGENTS.todo.md`.
 
 ## 8. Scope of This File
 * **Rules Only, No Decisions:** This file contains only rules — instructions that apply to all work in this repository. Permanent decisions, rationales, measurements and history do NOT belong here, but in `docs/`/`features/` or the project documentation; open items go to `AGENTS.todo.md`; completed work lives in the Git history.
+
+## Gates
+
+Regeln dieser Ebene. Was nur ein Verzeichnis betrifft, gehört in die
+`AGENTS.md` **dieses** Verzeichnisses — sie wird geladen, wenn eine Datei
+daraus gelesen wird.
+
+Ein Plan in `docs/plans/` beginnt mit `**Status:** Plan | In Arbeit | Done |
+Empfehlung, nicht implementiert`.
+
+Die kanonischen Agent-Regeln laufen über `ratchet` (Preset `agent-rules`):
+`ratchet check` vor jedem Commit und in der CI.
