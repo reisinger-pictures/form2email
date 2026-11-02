@@ -38,10 +38,12 @@ services:
       #
       # Single source of truth: the non-secret defaults (host, port, encryption,
       # username, from) live ONLY in config.php. Compose deliberately forwards
-      # them empty (`:-`), so a missing Portainer value falls back to config.php
-      # instead of silently overriding it with a stale provider endpoint. The
-      # password is a secret and has no default anywhere: it MUST be set in
-      # Portainer, otherwise mailer_phpmailer.php fails fast with a clear error.
+      # them empty (`:-`), so config.php remains their only source. The
+      # production secret is stored only in
+      # /opt/stacks/form-reisinger-pictures/.env on the host (root:root, mode
+      # 0600); never commit it or sync it from this repository. Deploy with
+      # deployment/deploy.sh. The password has no default anywhere, so
+      # mailer_phpmailer.php fails fast with a clear error if it is missing.
       - REISINGER_PICTURES_SMTP_PASSWORD=${REISINGER_PICTURES_SMTP_PASSWORD:-}
       - REISINGER_PICTURES_SMTP_HOST=${REISINGER_PICTURES_SMTP_HOST:-}
       - REISINGER_PICTURES_SMTP_PORT=${REISINGER_PICTURES_SMTP_PORT:-}

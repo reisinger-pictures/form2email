@@ -1,112 +1,91 @@
-# Deployment Guide (Portainer)
-
-This document describes how to deploy the `form2email` application with Portainer.
+# Deployment
 
 ## Architecture
 
-We use an **Infrastructure as Code** (IaC) approach. The `docker-compose.yml`
-file is version-controlled and stored in this repository. Portainer should pull
-the stack configuration directly from this repository so the repository stays
-the single source of truth (AGENTS.md §4).
+The Compose file is version-controlled in this repository. `deployment/deploy.sh`
+transfers only this file to `/opt/stacks/form-reisinger-pictures/compose.yaml`
+and updates the stack with Docker Compose. Portainer is no longer part of the
+deployment workflow. Background: `strato-vps/docs/plans/portainer-exit.md`.
 
 The stack consists of two services:
 
 1. `composer_init`: A one-shot container that installs the Composer dependencies
-   (`vendor/`) into the bind-mount directory before the app starts.
-2. `app`: The live PHP web application serving the form. It starts only after
-   `composer_init` completed successfully.
+   (`vendor/`) in the bind-mounted directory before the app starts.
+2. `app`: The PHP web application. It starts only after `composer_init` has
+   completed successfully.
 
-Mail transport is chosen per domain in `config.php` via
-`mailer.options.auth_type`: `password` (SMTP basic auth, e.g. Zoho Mail) or
-`oauth2` (Google XOAUTH2). For the production domain `reisinger.pictures` the
-active transport is Zoho Mail over STARTTLS (`smtppro.zoho.eu:587`).
+The mail transport is selected per domain in `config.php`. For the production
+domain `reisinger.pictures`, Zoho Mail is used over STARTTLS
+(`smtppro.zoho.eu:587`) with an SMTP password.
 
-### Configuration model (single source of truth)
+### Configuration model (Single Source of Truth)
 
-To prevent configuration drift, the two configuration layers have strictly
-separated responsibilities (AGENTS.md §2):
+To prevent configuration drift, the Compose file, `config.php`, and the
+host-side `.env` are clearly separated:
 
-* **Non-secret defaults live ONLY in `config.php`** (host, port, encryption,
-  username, sender). `docker-compose.yml` deliberately forwards these variables
-  empty (`${VARIABLE_NAME:-}`), so a missing Portainer value falls back to
-  `config.php`. A value set in Portainer still overrides the default.
-* **Secrets have NO default anywhere.** `<PREFIX>_SMTP_PASSWORD` and the OAuth
-  credentials MUST be set in Portainer. If password auth is active but the
-  password is empty, `mailer_phpmailer.php` fails fast with a precise,
-  secret-free log line instead of the generic "Could not authenticate".
-* **Never commit or sync `.env*` files.** They are listed in `.gitignore` and
-  excluded from `sync.sh`, because a secret file inside the webroot can be
-  served by the reverse proxy (`.htaccess` is not honoured under PHP-FPM/Caddy).
+* **Non-secret defaults live exclusively in `config.php`** (host, port,
+  encryption, username, sender). Compose forwards optional environment
+  variables as empty (`${VARIABLE_NAME:-}`), keeping `config.php` as the only
+  source of these defaults.
+* **The only production secret is** `REISINGER_PICTURES_SMTP_PASSWORD`. It has
+  no default. If it is empty, `mailer_phpmailer.php` fails with a clear,
+  secret-free error.
+* **The `.env` exists only on the host** at
+  `/opt/stacks/form-reisinger-pictures/.env`, is owned by `root:root`, and has
+  mode `0600`. It is never created from the repository, overwritten, or synced.
+  It is outside the web root.
 
-## Deployment Steps
+## Deploy
 
-1. **Log into Portainer** and navigate to your environment.
-2. Go to **Stacks** and click **Add stack**.
-3. Enter a name for your stack (e.g., `form2email-production`).
-4. Select the **Repository** build method (Recommended) or copy-paste the
-   contents of `docker-compose.yml` into the Web editor.
-    * *If using Repository:* Enter your Git repository URL. Specify the branch
-      and the path to the `docker-compose.yml` file.
-5. Scroll down to **Environment variables**.
-6. Click **Add environment variable** and add the values described below.
-   **Never commit these values to Git!**
-7. Toggle **Enable relative path volumes** (if applicable to your Portainer
-   setup) to ensure the volume binds work correctly.
-8. Click **Deploy the stack**.
+Before the first deployment, create the stack directory on the host and manage
+the secret file there manually. Example contents for the file—replace the
+placeholder with the secret and never commit it:
 
-### Environment Variables
+```dotenv
+REISINGER_PICTURES_SMTP_PASSWORD=<SMTP app password>
+```
 
-The configuration in `config.php` is fully per-domain. Each domain block carries
-its own `mailer.options.auth_type`. All variables are therefore prefixed with
-the upper-cased domain name: for `reisinger.pictures` the prefix is
-`REISINGER_PICTURES_`; add a separate prefix per domain (e.g. `A_COM_` for
-`a.com`).
+The file must have mode `0600`. The deployment script checks the directory,
+file, and permissions, but does not read or print the secret contents.
 
-#### Required when `auth_type=password` (SMTP basic auth)
+```bash
+./deployment/deploy.sh --dry-run
+./deployment/deploy.sh
+```
 
-| Variable Name | Description | Example / Format |
+The script transfers only `deployment/docker-compose.yml` to
+`/opt/stacks/form-reisinger-pictures/compose.yaml` and runs
+`docker compose -f /opt/stacks/form-reisinger-pictures/compose.yaml up -d --wait`
+from the stack directory. It runs neither `down` nor `--build` and does not
+touch the `.env` file.
+
+### Environment variables
+
+For the production domain, only the SMTP password is required. Host, port,
+encryption, and username are optional overrides and remain empty in the Compose
+file when unset:
+
+| Variable | Meaning | Default |
 | :--- | :--- | :--- |
-| `<PREFIX>_SMTP_PASSWORD` | **Secret.** SMTP password / app-specific password. No default: must be set. | `your-app-password` |
-| `<PREFIX>_SMTP_HOST` | Optional override. Empty falls back to the `config.php` default. | `smtppro.zoho.eu` |
-| `<PREFIX>_SMTP_PORT` | Optional override. Empty falls back to `587`. | `587` |
-| `<PREFIX>_SMTP_ENCRYPTION` | Optional override: `tls` or `ssl`. Empty falls back to `tls`. | `tls` |
-| `<PREFIX>_SMTP_USERNAME` | Optional override. Empty falls back to the `config.php` default (full mailbox address for Zoho Mail). | `florian@reisinger.pictures` |
+| `REISINGER_PICTURES_SMTP_PASSWORD` | **Secret**, Zoho app password; no default | Required |
+| `REISINGER_PICTURES_SMTP_HOST` | Optional SMTP host override | `config.php` |
+| `REISINGER_PICTURES_SMTP_PORT` | Optional SMTP port override | `config.php` |
+| `REISINGER_PICTURES_SMTP_ENCRYPTION` | Optional override (`tls`/`ssl`) | `config.php` |
+| `REISINGER_PICTURES_SMTP_USERNAME` | Optional SMTP username override | `config.php` |
 
-Example for `reisinger.pictures`: only `REISINGER_PICTURES_SMTP_PASSWORD` is
-mandatory. Leave host and username empty to use the `config.php` defaults
-(`smtppro.zoho.eu`, `florian@reisinger.pictures`). Zoho Mail authenticates with
-the full mailbox address and an **app-specific password**
-(Zoho account -> Security -> App Passwords); a regular account password only
-works while 2FA is disabled.
+Zoho Mail uses the full mailbox name and an **app password** (Zoho account →
+Security → App Passwords), not the regular account password.
 
-#### Required when `auth_type=oauth2` (Google XOAUTH2)
+## Updating the Compose file
 
-| Variable Name | Description | Example / Format |
-| :--- | :--- | :--- |
-| `<PREFIX>_OAUTH_CLIENT_ID` | Google OAuth2 Client ID. | `...apps.googleusercontent.com` |
-| `<PREFIX>_OAUTH_CLIENT_SECRET` | **Secret.** Google OAuth2 Client Secret. | `GOCSPX-...` |
-| `<PREFIX>_OAUTH_REFRESH_TOKEN` | **Secret.** Google OAuth2 Refresh Token. | `1//03a6...` |
-
-> **Note:** Monitoring the validity of an OAuth token MUST NOT run inside the
-> live application (AGENTS.md §3). If such monitoring is required, run it in a
-> separate, isolated sidecar container and never in the request path.
-
-## Updating the Stack
-
-When you change `docker-compose.yml` in this repository:
-
-1. Go to the Stack in Portainer.
-2. Click on the **Editor** tab.
-3. Click **Pull and update** (or manually click "Update the stack" if you used
-   the Web editor method).
-
-Application files (`config.php`, `index.php`, `src/**`, mailers) are deployed by
-`./sync.sh`. Per AGENTS.md §6, always run the test suite and commit/push before
-syncing.
+Stack changes are deployed with `./deployment/deploy.sh`. The script uses the
+project directory `/opt/stacks/form-reisinger-pictures`, allowing Docker Compose
+to load the `.env` file there. Application files (`config.php`, `index.php`,
+`src/**`, mailers) continue to be synced separately with `./sync.sh`.
 
 ## Troubleshooting
 
-The mailer writes a structured, secret-free failure line on every send failure:
+On failure, the mailer writes a structured, secret-free log line:
 
 ```
 form2email mail send failed: mailer=phpmailer auth=password host=smtppro.zoho.eu
@@ -115,22 +94,11 @@ receiver=... error="SMTP Error: Could not authenticate."
 exception=PHPMailer\PHPMailer\Exception hint="SMTP authentication failed: ..."
 ```
 
-* View it with `docker logs form-reisinger-pictures` (or in the Portainer log
-  view). The SMTP password/OAuth secrets are never logged.
-* Verify the effective environment delivered to the container:
-  `docker exec form-reisinger-pictures env | grep REISINGER_PICTURES_SMTP`.
-* `Could not authenticate` almost always means the username does not match the
-  host (Zoho: full mailbox address, not `emailapikey`) or the app password was
-  revoked/rotated. Regenerate it under Zoho account -> Security -> App Passwords
-  and update `REISINGER_PICTURES_SMTP_PASSWORD` in Portainer.
-* An empty password is reported explicitly ("SMTP password is not configured")
-  instead of a generic authentication error.
-
-### History: the "Could not authenticate" drift incident
-
-The strict separation in the configuration model above exists because of a real
-incident: leftover **ZeptoMail defaults duplicated in `docker-compose.yml`
-silently overrode the Zoho Mail configuration** in `config.php`, and mail
-sending failed with `Could not authenticate`. Removing the duplicated defaults
-(and forwarding the variables empty) is the fix that made `config.php` the only
-place for non-secret defaults.
+* Logs: `docker logs form-reisinger-pictures`. The SMTP password is not logged.
+* Check file permissions without reading the secret contents:
+  `stat -c '%a %U:%G' /opt/stacks/form-reisinger-pictures/.env` — expected:
+  `600 root:root`.
+* `Could not authenticate` usually means the username does not match the host or
+  the app password has been revoked. Add a new app password to the host `.env`;
+  do not copy its contents into logs or terminal output.
+* An empty password is explicitly reported as “SMTP password is not configured”.

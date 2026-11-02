@@ -12,9 +12,9 @@ in `AGENTS.todo.md`.
 * **Code Documentation (PHPDoc):** Never remove or truncate existing PHPDoc comments. All methods and functions MUST be documented with standard PHPDoc blocks (description, `@param`, `@return`).
 
 ## 2. Environment & Security (Deployment)
-* **Environment Variables (ENV):** Never hardcode sensitive data (API tokens, SMTP passwords, OAuth keys, webhook URLs) in the code or in `config.php`. Always read them via `getenv('VARIABLE_NAME')` in PHP, injected through the environment (e.g. Portainer stack variables).
-* **Portainer Stack Updates:** When modifying `docker-compose.yml`, pass environment variables using the `${VARIABLE_NAME}` syntax so they can be managed centrally in the Portainer UI.
-* **Secret Files Are Never Committed or Synced:** `.env` and `.env.*` MUST be listed in `.gitignore` and excluded from `sync.sh`. Secrets live only in the Portainer environment.
+* **Environment Variables (ENV):** Never hardcode sensitive data (API tokens, SMTP passwords, OAuth keys, webhook URLs) in the code or in `config.php`. Always read them via `getenv('VARIABLE_NAME')` in PHP, injected through the host-only Compose `.env` file.
+* **Compose Stack Updates:** When modifying `docker-compose.yml`, pass environment variables using the `${VARIABLE_NAME}` syntax. The host's `/opt/stacks/form-reisinger-pictures/.env` supplies values to Compose; update the stack with `deployment/deploy.sh`.
+* **Secret Files Are Never Committed or Synced:** `.env` and `.env.*` MUST be listed in `.gitignore` and excluded from `sync.sh`. The production `.env` lives only on the host with mode `0600`; the deployment script syncs only the Compose file and never creates or overwrites `.env`.
 * **Single Source of Truth for Non-Secret Mail Settings:** The non-secret mail defaults (host, port, encryption, username, sender) MUST live ONLY in `config.php`. `docker-compose.yml` MUST forward these variables empty (`${VARIABLE_NAME:-}`). Duplicate defaults across both files are forbidden. Secrets (passwords/tokens) have NO default anywhere.
 
 ## 3. Architecture & Monitoring
@@ -23,7 +23,7 @@ in `AGENTS.todo.md`.
 * **No External Error Webhooks:** The live application MUST NOT ship form data or error payloads to external webhooks (e.g. Make.com). SMTP failures are returned directly to the client — HTTP 500 with the JSON body `{"ok": false, "error": "Failed to send email."}` in pure POST/API mode (`_next` absent), HTTP 500 plain text in legacy redirect mode. Operational visibility comes from the structured, secret-free `error_log` line written by `mailer_phpmailer.php` (see section 5).
 
 ## 4. Infrastructure as Code (IaC)
-* **Single Source of Truth:** `docker-compose.yml` MUST be version-controlled in this repository, and Portainer deployments SHOULD pull that file directly from the repository.
+* **Single Source of Truth:** `docker-compose.yml` MUST be version-controlled in this repository and deployed with `deployment/deploy.sh` to `/opt/stacks/form-reisinger-pictures/compose.yaml`.
 
 ## 5. Test & Failover Discipline
 * **Automated Tests for Security-Critical Code:** All security-critical or pure helper functions (whitelist enforcement, redirect-origin validation, secret/ENV resolution) MUST be covered by PHPUnit tests in `tests/`. New helpers in that surface area MUST ship with tests in the same change. The suite is executed via `composer test` (or `./vendor/bin/phpunit`) and MUST pass before a change is merged.
@@ -48,12 +48,12 @@ in `AGENTS.todo.md`.
 
 ## Gates
 
-Regeln dieser Ebene. Was nur ein Verzeichnis betrifft, gehört in die
-`AGENTS.md` **dieses** Verzeichnisses — sie wird geladen, wenn eine Datei
-daraus gelesen wird.
+Rules at this level apply across the repository. Rules specific to a directory
+belong in that directory's `AGENTS.md`; it is loaded when a file from that
+directory is read.
 
-Ein Plan in `docs/plans/` beginnt mit `**Status:** Plan | In Arbeit | Done |
-Empfehlung, nicht implementiert`.
+A plan in `docs/plans/` starts with `**Status:** Plan | In Progress | Done |
+Recommendation, not implemented`.
 
-Die kanonischen Agent-Regeln laufen über `ratchet` (Preset `agent-rules`):
-`ratchet check` vor jedem Commit und in der CI.
+The canonical agent rules are enforced by `ratchet` (the `agent-rules` preset):
+run `ratchet check` before every commit and in CI.
