@@ -123,7 +123,6 @@ vendor/
 .phpunit.cache/
 # macOS / IDE
 .DS_Store
-.idea/
 
 # Secrets / local environment files — NEVER commit (AGENTS.md §2)
 .env
